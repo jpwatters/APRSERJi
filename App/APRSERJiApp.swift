@@ -149,6 +149,8 @@ private struct StationMap: View {
     @State private var calloutPoint: CGPoint?
     /** Set at launch when a verified passcode is saved; the app connects on its own at this time. */
     @State private var autoConnectAt: Date?
+    /** Seconds left when the countdown was paused; nil while it runs or when there is none. */
+    @State private var autoConnectPaused: TimeInterval?
     @State private var autoConnectChecked = false
     @AppStorage("rangeGPSMiles") private var rangeGPS = 500
     @AppStorage("rangeLastFixMiles") private var rangeLastFix = 500
@@ -292,7 +294,7 @@ private struct StationMap: View {
 
             HStack {
                 Button(model.running ? "Disconnect" : "Connect") {
-                    autoConnectAt = nil
+                    cancelAutoConnect()
                     if model.running { model.disconnect() } else { connect() }
                 }
                 Text(model.status).accessibilityIdentifier("connectionStatus")
@@ -554,23 +556,51 @@ private struct StationMap: View {
         autoConnectAt = Date().addingTimeInterval(15)
     }
 
-    /** "Connecting automatically in 12 s" with a Cancel button, shown while the countdown runs. */
+    /**
+     * "Connecting automatically in 12 s" with Connect now and Cancel. Clicking the countdown text pauses it;
+     * clicking again resumes from the same number of seconds.
+     */
     @ViewBuilder private var autoConnectNotice: some View {
-        if let due = autoConnectAt, !model.running {
+        if !model.running, autoConnectAt != nil || autoConnectPaused != nil {
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 HStack(spacing: 8) {
-                    Text("Connecting automatically in \(max(0, Int(due.timeIntervalSince(context.date).rounded(.up)))) s")
-                        .font(.caption)
+                    Button(action: toggleAutoConnectPause) {
+                        if let remaining = autoConnectPaused {
+                            Label("Auto-connect paused at \(Int(remaining.rounded(.up))) s — click to resume",
+                                  systemImage: "play.circle")
+                        } else if let due = autoConnectAt {
+                            Label("Connecting automatically in \(max(0, Int(due.timeIntervalSince(context.date).rounded(.up)))) s",
+                                  systemImage: "pause.circle")
+                        }
+                    }
+                    .foregroundStyle(autoConnectPaused == nil ? Color.primary : Color.orange)
+                    .help(autoConnectPaused == nil ? "Pause the countdown" : "Resume the countdown")
                     Button("Connect now") {
-                        autoConnectAt = nil
+                        cancelAutoConnect()
                         enableSending = true
                         connect()
                     }
-                    Button("Cancel") { autoConnectAt = nil }
+                    Button("Cancel") { cancelAutoConnect() }
                 }
+                .font(.caption)
                 .buttonStyle(.borderless)
             }
         }
+    }
+
+    private func toggleAutoConnectPause() {
+        if let remaining = autoConnectPaused {
+            autoConnectPaused = nil
+            autoConnectAt = Date().addingTimeInterval(max(1, remaining))
+        } else if let due = autoConnectAt {
+            autoConnectPaused = max(1, due.timeIntervalSinceNow)
+            autoConnectAt = nil
+        }
+    }
+
+    private func cancelAutoConnect() {
+        autoConnectAt = nil
+        autoConnectPaused = nil
     }
 
     private func refreshSavedPasscode() {
