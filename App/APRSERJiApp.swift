@@ -44,17 +44,15 @@ private final class AprsModel: ObservableObject {
         }
     }
 
-    /** Each coverage area is a circle of this radius: 500 miles. */
-    static let rangeKm: Int32 = 805
-    private(set) var areas: [CLLocationCoordinate2D] = []
+    private(set) var areas: [CoverageArea] = []
     private var session: (account: String, passcode: String, host: String, port: Int32)?
     private var lastAreaChange = Date.distantPast
 
     func connect(account: String, passcode: String, host: String, port: Int32,
-                 areas: [CLLocationCoordinate2D]) -> Bool {
+                 areas: [CoverageArea]) -> Bool {
         guard let core, !areas.isEmpty,
               core.startAreas(callsign: account, passcode: passcode, host: host, port: port,
-                              areas: Self.encode(areas), radiusKm: Self.rangeKm) else { return false }
+                              areas: Self.encode(areas)) else { return false }
         session = (account, passcode, host, port)
         self.areas = areas
         lastAreaChange = Date()
@@ -64,19 +62,31 @@ private final class AprsModel: ObservableObject {
     }
 
     /**
-     * Reconnects with new areas when one of the wanted areas lies more than 250 miles from every area
-     * already covered, at most once every two minutes. The server filter is fixed at login.
+     * Reconnects with new areas when a wanted area is not well inside an area already covered (its center
+     * more than half that area's radius away, or a larger radius wanted), at most once every two minutes.
+     * [force] applies edited ranges at once. The server filter is fixed at login.
      */
-    func updateCoverage(_ wanted: [CLLocationCoordinate2D]) {
-        guard running, let session, Date().timeIntervalSince(lastAreaChange) >= 120 else { return }
-        let uncovered = wanted.contains { want in areas.allSatisfy { Geo.distance(want, $0) > 402_336 } }
-        guard uncovered else { return }
+    func updateCoverage(_ wanted: [CoverageArea], force: Bool = false) {
+        guard running, let session, !wanted.isEmpty else { return }
+        if !force {
+            guard Date().timeIntervalSince(lastAreaChange) >= 120 else { return }
+            let uncovered = wanted.contains { want in
+                !areas.contains { have in
+                    have.radiusMiles >= want.radiusMiles
+                        && Geo.distance(want.coordinate, have.coordinate) <= Double(have.radiusMiles) * 1609.344 / 2
+                }
+            }
+            guard uncovered else { return }
+        }
         _ = connect(account: session.account, passcode: session.passcode, host: session.host,
                     port: session.port, areas: wanted)
     }
 
-    private static func encode(_ areas: [CLLocationCoordinate2D]) -> String {
-        areas.map { String(format: "%.4f,%.4f", $0.latitude, $0.longitude) }.joined(separator: ";")
+    private static func encode(_ areas: [CoverageArea]) -> String {
+        areas.map { area in
+            let km = min(2000, max(1, Int((Double(area.radiusMiles) * 1.609344).rounded())))
+            return String(format: "%.4f,%.4f,%d", area.coordinate.latitude, area.coordinate.longitude, km)
+        }.joined(separator: ";")
     }
 
     func disconnect() {
@@ -135,6 +145,9 @@ private struct StationMap: View {
     @State private var center = StationMap.savedCenter()
     @State private var focus: MapFocus?
     @State private var stationPath: [String] = []
+    @AppStorage("rangeGPSMiles") private var rangeGPS = 500
+    @AppStorage("rangeLastFixMiles") private var rangeLastFix = 500
+    @AppStorage("rangeCenterMiles") private var rangeCenter = 500
     @State private var showWeather = true
     @State private var showObjects = true
     @State private var unread = 0
@@ -304,6 +317,7 @@ private struct StationMap: View {
                 }
             }
             .padding(.horizontal)
+            rangeSettings
             if let status = gps.status {
                 Text(status).font(.caption).foregroundStyle(.secondary)
             }
@@ -363,24 +377,55 @@ private struct StationMap: View {
     }
 
     /**
-     * Where to receive stations: around the current GPS fix, the last known GPS fix and the map center.
-     * Points within 50 miles of one already listed are dropped, since their circles would nearly coincide.
+     * Where to receive stations: around the current GPS fix, the last known GPS fix and the map center, each
+     * with its own range from the Map page. A point within 50 miles of one already listed is merged into it,
+     * keeping the larger range.
      */
-    private var coverageAreas: [CLLocationCoordinate2D] {
-        var result: [CLLocationCoordinate2D] = []
-        for point in [gps.latest?.coordinate, GPSTracker.lastKnown(), center].compactMap({ $0 })
-            where CLLocationCoordinate2DIsValid(point) && result.allSatisfy({ Geo.distance(point, $0) > 80_467 }) {
-            result.append(point)
+    private var coverageAreas: [CoverageArea] {
+        let candidates: [CoverageArea?] = [
+            gps.latest.map { CoverageArea(name: "GPS", coordinate: $0.coordinate, radiusMiles: RangeSetting.clamp(rangeGPS)) },
+            GPSTracker.lastKnown().map { CoverageArea(name: "last fix", coordinate: $0, radiusMiles: RangeSetting.clamp(rangeLastFix)) },
+            CoverageArea(name: "map center", coordinate: center, radiusMiles: RangeSetting.clamp(rangeCenter)),
+        ]
+        var result: [CoverageArea] = []
+        for area in candidates.compactMap({ $0 }) where CLLocationCoordinate2DIsValid(area.coordinate) {
+            if let index = result.firstIndex(where: { Geo.distance($0.coordinate, area.coordinate) <= 80_467 }) {
+                if area.radiusMiles > result[index].radiusMiles { result[index].radiusMiles = area.radiusMiles }
+                result[index].name += " + " + area.name
+            } else {
+                result.append(area)
+            }
         }
         return result
     }
 
     private var coverageText: String {
-        var names: [String] = []
-        if gps.latest != nil { names.append("GPS") } else if GPSTracker.lastKnown() != nil { names.append("last GPS fix") }
-        names.append("map center")
-        let count = model.areas.count
-        return "Receiving 500 mi around \(names.joined(separator: " and ")) · \(count) area\(count == 1 ? "" : "s")"
+        "Receiving " + model.areas.map { "\($0.radiusMiles) mi around \($0.name)" }.joined(separator: " · ")
+    }
+
+    private var rangesChanged: Bool {
+        model.running && coverageAreas.map(\.radiusMiles) != model.areas.map(\.radiusMiles)
+    }
+
+    private var rangeSettings: some View {
+        // Scrolls sideways on a narrow iPhone screen instead of truncating the fields.
+        ScrollView(.horizontal, showsIndicators: false) { rangeRow }
+    }
+
+    private var rangeRow: some View {
+        HStack(spacing: 10) {
+            Text("Range (mi)").font(.caption.bold())
+            RangeField(label: "GPS", value: $rangeGPS)
+            RangeField(label: "Last fix", value: $rangeLastFix)
+            RangeField(label: "Map center", value: $rangeCenter)
+            if model.running {
+                Button("Apply") { model.updateCoverage(coverageAreas, force: true) }
+                    .disabled(!rangesChanged)
+            } else {
+                Text("Used when you connect").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal)
     }
 
     private func openChat(with callsign: String) {
@@ -425,5 +470,43 @@ private struct StationMap: View {
         callsign = account
         pendingPasscode = enableSending && !typed.isEmpty ? typed : nil
         passcode = ""
+    }
+}
+
+/** One receive circle: a point and its range in miles. */
+struct CoverageArea: Equatable {
+    var name: String
+    var coordinate: CLLocationCoordinate2D
+    var radiusMiles: Int
+
+    static func == (a: CoverageArea, b: CoverageArea) -> Bool {
+        a.name == b.name && a.radiusMiles == b.radiusMiles
+            && a.coordinate.latitude == b.coordinate.latitude && a.coordinate.longitude == b.coordinate.longitude
+    }
+}
+
+enum RangeSetting {
+    /** APRS-IS range filters are limited here to 1–1000 miles (about 1609 km). */
+    static func clamp(_ miles: Int) -> Int { min(1000, max(1, miles)) }
+}
+
+/** A compact miles field for the Map page. Out-of-range entries snap to 1–1000 when you finish editing. */
+private struct RangeField: View {
+    let label: String
+    @Binding var value: Int
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(label).font(.caption)
+            TextField(label, value: $value, format: .number)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 64)
+                .multilineTextAlignment(.trailing)
+                #if os(iOS)
+                .keyboardType(.numberPad)
+                #endif
+                .onSubmit { value = RangeSetting.clamp(value) }
+                .accessibilityLabel("\(label) range in miles")
+        }
     }
 }

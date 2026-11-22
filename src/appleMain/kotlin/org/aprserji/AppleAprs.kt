@@ -79,16 +79,16 @@ class AppleAprs @Throws(Exception::class) constructor(path: String, private val 
     }
 
     /**
-     * Connects with one range circle per area. [areas] is "lat,lon;lat,lon;…" (up to four points) and
-     * [radiusKm] applies to each, e.g. 805 km for 500 miles. The core's single range filter stops at 500 km,
-     * so this sends the equivalent javAPRSSrvr r/ terms as a custom filter.
+     * Connects with one range circle per area. [areas] is "lat,lon,radiusKm;…" (up to four areas, each
+     * radius 1–2000 km). The core's single range filter stops at 500 km, so this sends the equivalent
+     * javAPRSSrvr r/ terms as a custom filter.
      */
-    fun startAreas(callsign: String, passcode: String, host: String, port: Int, areas: String, radiusKm: Int): Boolean {
+    fun startAreas(callsign: String, passcode: String, host: String, port: Int, areas: String): Boolean {
         val points = parseAreas(areas) ?: return false
-        if (points.isEmpty() || points.size > 4 || radiusKm !in 1..2000) return false
-        val filter = points.joinToString(" ") { (lat, lon) -> "r/${coordinate(lat)}/${coordinate(lon)}/$radiusKm" }
+        if (points.isEmpty() || points.size > 4) return false
+        val filter = points.joinToString(" ") { "r/${coordinate(it.latitude)}/${coordinate(it.longitude)}/${it.radiusKm}" }
         val config = try {
-            AprsIsConfig(callsign, passcode, host, port, points[0].first, points[0].second,
+            AprsIsConfig(callsign, passcode, host, port, points[0].latitude, points[0].longitude,
                 filterMode = "custom", customFilter = filter,
                 application = "APRSERJi", applicationVersion = applicationVersion)
         } catch (_: IllegalArgumentException) {
@@ -102,11 +102,16 @@ class AppleAprs @Throws(Exception::class) constructor(path: String, private val 
 
     private val filterText = MutableStateFlow("")
 
-    private fun parseAreas(text: String): List<Pair<Double, Double>>? = runCatching {
+    private class Area(val latitude: Double, val longitude: Double, val radiusKm: Int)
+
+    private fun parseAreas(text: String): List<Area>? = runCatching {
         text.split(';').filter { it.isNotBlank() }.map { area ->
-            val (lat, lon) = area.split(',').map { it.trim().toDouble() }
-            AprsFix(lat, lon, 0) // validates the range
-            lat to lon
+            val parts = area.split(',').map { it.trim() }
+            require(parts.size == 3)
+            val radius = parts[2].toInt()
+            require(radius in 1..2000)
+            AprsFix(parts[0].toDouble(), parts[1].toDouble(), 0) // validates the coordinates
+            Area(parts[0].toDouble(), parts[1].toDouble(), radius)
         }
     }.getOrNull()
 
