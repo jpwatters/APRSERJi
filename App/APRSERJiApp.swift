@@ -146,6 +146,7 @@ private struct StationMap: View {
     @State private var focus: MapFocus?
     @State private var stationPath: [String] = []
     @State private var showMapControls = false
+    @State private var calloutPoint: CGPoint?
     /** Set at launch when a verified passcode is saved; the app connects on its own at this time. */
     @State private var autoConnectAt: Date?
     @State private var autoConnectChecked = false
@@ -327,7 +328,8 @@ private struct StationMap: View {
                    tab = 2
                },
                onMessage: { openChat(with: $0) },
-               center: $center, selectedStation: $selectedStation)
+               center: $center, selectedStation: $selectedStation, calloutPoint: $calloutPoint)
+            .overlay { stationBubble }
             .overlay(alignment: .bottomTrailing) {
                 Link("© OpenStreetMap contributors", destination: URL(string: "https://www.openstreetmap.org/copyright")!)
                     .font(.caption2)
@@ -337,6 +339,41 @@ private struct StationMap: View {
             }
             .overlay(alignment: .top) { mapOverlay }
         // Station details, zoom and messaging live in the map's station bubble.
+    }
+
+    /**
+     * The selected station's information bubble, pinned to its marker. It opens above the marker, or below
+     * when the marker is near the top, and slides sideways to stay inside the map.
+     */
+    @ViewBuilder private var stationBubble: some View {
+        if let point = calloutPoint, let callsign = selectedStation,
+           let station = model.stations.first(where: { $0.callsign == callsign }) {
+            GeometryReader { geo in
+                let half: CGFloat = 145
+                let x = min(max(point.x, half + 8), max(half + 8, geo.size.width - half - 8))
+                let above = point.y > 300
+                let bubble = CalloutBubble(pointsDown: above, pointerOffset: point.x - x) {
+                    StationCallout(
+                        station: station, origin: origin.coordinate, originLabel: origin.label,
+                        onZoom: { focus = MapFocus(callsign: callsign, coordinate: station.coordinate, meters: 3_000) },
+                        onDetails: {
+                            stationPath = [callsign]
+                            tab = 2
+                        },
+                        onMessage: { openChat(with: callsign) },
+                        onClose: { selectedStation = nil })
+                }
+                .fixedSize()
+                if above {
+                    // The marker's pin is about 40 points tall; the pointer sits just above its head.
+                    bubble.frame(width: geo.size.width, height: max(0, point.y - 40), alignment: .bottom)
+                        .offset(x: x - geo.size.width / 2)
+                } else {
+                    bubble.frame(width: geo.size.width, alignment: .top)
+                        .offset(x: x - geo.size.width / 2, y: point.y + 6)
+                }
+            }
+        }
     }
 
     /** A slim status bar floating over the map; the full controls open as a panel beneath it. */

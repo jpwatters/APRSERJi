@@ -10,6 +10,7 @@ struct StationCallout: View {
     let onZoom: () -> Void
     let onDetails: () -> Void
     let onMessage: () -> Void
+    let onClose: () -> Void
 
     private var metric: Bool { UserDefaults.standard.bool(forKey: "useMetric") }
 
@@ -18,8 +19,16 @@ struct StationCallout: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     StationBadge(station: station).scaleEffect(0.75).frame(width: 24, height: 24)
-                    Text("\(station.kindLabel) · \(station.symbolInfo.name)")
-                        .font(.caption).foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(station.callsign).font(.headline.monospaced()).foregroundStyle(Color.accentColor)
+                        Text("\(station.kindLabel) · \(station.symbolInfo.name)")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 4)
+                    Button(action: onClose) { Image(systemName: "xmark").font(.caption.bold()) }
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel("Close")
                 }
                 Rectangle().fill(station.tint.opacity(0.6)).frame(height: 2)
                 Text("\(station.heardAt.formatted(date: .numeric, time: .standard)) (\(Units.age(station.heardAt, now: context.date)))")
@@ -86,30 +95,38 @@ struct StationCallout: View {
     }
 }
 
-/** Hosts the SwiftUI bubble inside MapKit's native callout and lets it be refreshed in place. */
-#if os(macOS)
-import AppKit
+/** The bubble's shape: a rounded card with a small pointer toward the station. */
+struct CalloutBubble<Content: View>: View {
+    let pointsDown: Bool
+    /** Horizontal offset of the pointer from the bubble's center, so it still aims at the marker near an edge. */
+    let pointerOffset: CGFloat
+    @ViewBuilder let content: Content
 
-final class CalloutHost {
-    private let host: NSHostingView<StationCallout>
-    init(_ content: StationCallout) { host = NSHostingView(rootView: content) }
-    var view: NSView { host }
-    func update(_ content: StationCallout) { host.rootView = content }
-}
-#else
-import UIKit
-
-final class CalloutHost {
-    private let controller: UIHostingController<StationCallout>
-    init(_ content: StationCallout) {
-        controller = UIHostingController(rootView: content)
-        controller.sizingOptions = .intrinsicContentSize
-        controller.view.backgroundColor = .clear
+    var body: some View {
+        VStack(spacing: 0) {
+            if !pointsDown { pointer.rotationEffect(.degrees(180)) }
+            content
+                .padding(10)
+                .background(.background, in: RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(.separator))
+            if pointsDown { pointer }
+        }
+        .compositingGroup()
+        .shadow(color: .black.opacity(0.25), radius: 6, y: 2)
     }
-    var view: UIView { controller.view }
-    func update(_ content: StationCallout) {
-        controller.rootView = content
-        controller.view.invalidateIntrinsicContentSize()
+
+    private var pointer: some View {
+        Triangle().fill(.background).frame(width: 18, height: 9).offset(x: pointerOffset)
     }
 }
-#endif
+
+private struct Triangle: Shape {
+    func path(in rect: CGRect) -> Path {
+        Path { path in
+            path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))
+            path.closeSubpath()
+        }
+    }
+}

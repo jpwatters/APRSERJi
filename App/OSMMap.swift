@@ -38,6 +38,8 @@ struct MapFocus: Equatable {
     let id = UUID()
     let callsign: String
     let coordinate: CLLocationCoordinate2D
+    /** Zoom to this many meters across; nil keeps the current zoom (capped at about 20 km). */
+    var meters: Double? = nil
 
     static func == (a: MapFocus, b: MapFocus) -> Bool { a.id == b.id }
 }
@@ -66,6 +68,8 @@ struct OSMMap: NativeMapRepresentable {
     let onMessage: (String) -> Void
     @Binding var center: CLLocationCoordinate2D
     @Binding var selectedStation: String?
+    /** Where the selected station's marker is on screen (top-left origin), for positioning its bubble. */
+    @Binding var calloutPoint: CGPoint?
 
     #if os(macOS)
     func makeNSView(context: Context) -> MKMapView { makeMap(context.coordinator) }
@@ -98,8 +102,7 @@ struct OSMMap: NativeMapRepresentable {
         private var markers: [String: StationAnnotation] = [:]
         private var focusID: UUID?
         private weak var mapView: MKMapView?
-        private var callout: CalloutHost?
-        private var calloutStation: StationDetail?
+        private var previousSelection: String?
         private var trail: MKPolyline?
         private var position: MKPointAnnotation?
         private var previousFix: Date?
@@ -121,13 +124,26 @@ struct OSMMap: NativeMapRepresentable {
             mapView = map
             updateStations(on: map)
             updateTrack(on: map)
-            refreshCallout()
+            // Closing the bubble clears the selection in SwiftUI; mirror that on the map. Only act on a change
+            // from a station to none, because a click's own selection reaches SwiftUI a moment later.
+            if parent.selectedStation == nil, previousSelection != nil {
+                for selected in map.selectedAnnotations where selected is StationAnnotation {
+                    map.deselectAnnotation(selected, animated: false)
+                }
+            }
+            previousSelection = parent.selectedStation
+            updateCalloutPoint(map)
             if let focus = parent.focus, focus.id != focusID {
                 focusID = focus.id
-                let span = min(map.region.span.latitudeDelta, 0.2)
-                map.setRegion(MKCoordinateRegion(center: focus.coordinate,
-                                                 span: MKCoordinateSpan(latitudeDelta: span, longitudeDelta: span)),
-                              animated: true)
+                if let meters = focus.meters {
+                    map.setRegion(MKCoordinateRegion(center: focus.coordinate, latitudinalMeters: meters,
+                                                     longitudinalMeters: meters), animated: true)
+                } else {
+                    let span = min(map.region.span.latitudeDelta, 0.2)
+                    map.setRegion(MKCoordinateRegion(center: focus.coordinate,
+                                                     span: MKCoordinateSpan(latitudeDelta: span, longitudeDelta: span)),
+                                  animated: true)
+                }
                 if let marker = markers[focus.callsign] { map.selectAnnotation(marker, animated: true) }
             }
         }
@@ -206,6 +222,7 @@ struct OSMMap: NativeMapRepresentable {
         }
 
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
+            updateCalloutPoint(mapView)
             let location = mapView.centerCoordinate
             DispatchQueue.main.async { [weak self] in self?.parent.center = location }
         }
@@ -226,8 +243,8 @@ struct OSMMap: NativeMapRepresentable {
                 let view = mapView.dequeueReusableAnnotationView(withIdentifier: "station") as? MKMarkerAnnotationView
                     ?? MKMarkerAnnotationView(annotation: station, reuseIdentifier: "station")
                 view.annotation = station
-                view.canShowCallout = true
-                view.detailCalloutAccessoryView = nil
+                // The station bubble is drawn in SwiftUI, so MapKit's own callout stays off.
+                view.canShowCallout = false
                 view.glyphImage = makeGlyph(station.image)
                 switch station.kind {
                 case "weather": view.markerTintColor = .systemTeal
@@ -244,38 +261,35 @@ struct OSMMap: NativeMapRepresentable {
             return marker
         }
 
-        private func calloutContent(for station: StationDetail) -> StationCallout {
-            let callsign = station.callsign
-            return StationCallout(
-                station: station, origin: parent.origin, originLabel: parent.originLabel,
-                onZoom: { [weak self] in self?.zoom(to: callsign) },
-                onDetails: { [weak self] in self?.parent.onDetails(callsign) },
-                onMessage: { [weak self] in self?.parent.onMessage(callsign) })
+        /** Publishes the selected marker's screen position; the SwiftUI bubble is drawn there. */
+        private func updateCalloutPoint(_ map: MKMapView) {
+            var point: CGPoint?
+            if let marker = map.selectedAnnotations.first(where: { $0 is StationAnnotation }) {
+                let raw = map.convert(marker.coordinate, toPointTo: map)
+                #if os(macOS)
+                point = map.isFlipped ? raw : CGPoint(x: raw.x, y: map.bounds.height - raw.y)
+                #else
+                point = raw
+                #endif
+                if let p = point, !map.bounds.insetBy(dx: -40, dy: -40).contains(p) {
+                    point = nil
+                }
+            }
+            let current = parent.calloutPoint
+            let changed: Bool
+            switch (current, point) {
+            case (nil, nil): changed = false
+            case let (a?, b?): changed = abs(a.x - b.x) > 0.5 || abs(a.y - b.y) > 0.5
+            default: changed = true
+            }
+            guard changed else { return }
+            DispatchQueue.main.async { [weak self] in self?.parent.calloutPoint = point }
         }
 
-        /** Keeps an open bubble current as new packets arrive. */
-        private func refreshCallout() {
-            guard let callout, let shown = calloutStation,
-                  let latest = parent.stations.first(where: { $0.callsign == shown.callsign }),
-                  latest != shown else { return }
-            calloutStation = latest
-            callout.update(calloutContent(for: latest))
-        }
-
-        private func zoom(to callsign: String) {
-            guard let map = mapView, let marker = markers[callsign] else { return }
-            map.setRegion(MKCoordinateRegion(center: marker.coordinate, latitudinalMeters: 3_000, longitudinalMeters: 3_000),
-                          animated: true)
-        }
+        func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) { updateCalloutPoint(mapView) }
 
         func mapView(_ mapView: MKMapView, didSelect view: MKAnnotationView) {
-            if let marker = view.annotation as? StationAnnotation, let callsign = marker.title,
-               let station = parent.stations.first(where: { $0.callsign == callsign }) {
-                let host = CalloutHost(calloutContent(for: station))
-                callout = host
-                calloutStation = station
-                view.detailCalloutAccessoryView = host.view
-            }
+            updateCalloutPoint(mapView)
             let callsign = (view.annotation as? MKPointAnnotation)?.title
             DispatchQueue.main.async { [weak self] in
                 self?.parent.selectedStation = callsign.flatMap { self?.markers[$0] != nil ? $0 : nil }
@@ -283,11 +297,7 @@ struct OSMMap: NativeMapRepresentable {
         }
 
         func mapView(_ mapView: MKMapView, didDeselect view: MKAnnotationView) {
-            if view.annotation is StationAnnotation {
-                view.detailCalloutAccessoryView = nil
-                callout = nil
-                calloutStation = nil
-            }
+            updateCalloutPoint(mapView)
             let callsign = (view.annotation as? MKPointAnnotation)?.title
             DispatchQueue.main.async { [weak self] in
                 if self?.parent.selectedStation == callsign { self?.parent.selectedStation = nil }
