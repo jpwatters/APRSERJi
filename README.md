@@ -2,7 +2,7 @@
 
 Native APRS station map for iPhone, iPad, and Mac. The first milestone is a receive-only APRS-IS map with a configurable server. Move the map to the area you want to monitor, enter your callsign, and select **Connect**. The feed uses a 100 km filter centered on the map when you connect.
 
-The SwiftUI app uses MapKit and links the same Kotlin APRS engine as the other APRSIS builds. The APRS-IS session, wire formats, and station cache come from the pinned [aprs-core](https://github.com/kj4dxk/aprs-core) submodule. See the [cross-platform audit and Apple architecture](docs/architecture.md) for the path to Android feature parity.
+The SwiftUI app uses MapKit and links the Kotlin APRS engine also used by APRSERJ64 on Windows. APRSERJa is the standalone Android companion. The APRS-IS session, wire formats, and station cache come from the pinned [aprs-core](https://github.com/kj4dxk/aprs-core) submodule. See the [cross-platform audit and Apple architecture](docs/architecture.md) for the path to Android feature parity.
 
 ## Build on a Mac
 
