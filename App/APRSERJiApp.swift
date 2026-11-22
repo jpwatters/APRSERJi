@@ -7,6 +7,11 @@ import SwiftUI
 struct APRSERJiApp: App {
     @StateObject private var model = AprsModel()
 
+    init() {
+        // Become the notification delegate before any notification tap is delivered.
+        _ = MessageNotifier.shared
+    }
+
     var body: some Scene {
         WindowGroup {
             StationMap(model: model)
@@ -18,7 +23,7 @@ struct APRSERJiApp: App {
 private final class AprsModel: ObservableObject {
     let core: AppleAprs?
     @Published private(set) var running = false
-    @Published private(set) var stations: [StationMarker] = []
+    @Published private(set) var stations: [StationDetail] = []
     @Published private(set) var status = "Disconnected"
     @Published private(set) var revision: Int64 = 0
     @Published private(set) var chatError: String?
@@ -55,12 +60,14 @@ private final class AprsModel: ObservableObject {
         chatError = nil
     }
 
-    func refresh() {
-        guard let core else { return }
+    /** Updates published state and returns chat messages that arrived since the last call. */
+    @discardableResult
+    func refresh() -> [IncomingAlert] {
+        guard let core else { return [] }
         if revision != core.revision { revision = core.revision }
         if chatError != core.chatError { chatError = core.chatError }
-        guard running else { return }
-        let snapshot = core.stations
+        guard running else { return [] }
+        let snapshot = core.stationDetails
         if stations != snapshot { stations = snapshot }
         let nextStatus: String
         switch core.connectionState {
@@ -70,6 +77,7 @@ private final class AprsModel: ObservableObject {
         default: nextStatus = "Connecting"
         }
         if status != nextStatus { status = nextStatus }
+        return core.takeIncomingAlerts()
     }
 }
 
@@ -88,7 +96,16 @@ private struct StationMap: View {
     @State private var recipient = ""
     @State private var selectedStation: String?
     @State private var tab = 0
-    @State private var center = CLLocationCoordinate2D(latitude: 42.36, longitude: -71.06)
+    @AppStorage("mapLatitude") private var savedLatitude = 42.36
+    @AppStorage("mapLongitude") private var savedLongitude = -71.06
+    @State private var center = StationMap.savedCenter()
+    @State private var focus: MapFocus?
+    @State private var stationPath: [String] = []
+    @State private var showWeather = true
+    @State private var showObjects = true
+    @State private var unread = 0
+    @AppStorage("notifyMessages") private var notify = true
+    @ObservedObject private var notifier = MessageNotifier.shared
 
     var body: some View {
         if let core = model.core {
@@ -98,15 +115,48 @@ private struct StationMap: View {
                     stationMap
                         .tabItem { Label("Map", systemImage: "map") }
                         .tag(0)
+                    StationListView(stations: model.stations, origin: origin.coordinate, originLabel: origin.label,
+                                    connected: model.running,
+                                    onMessage: { openChat(with: $0) },
+                                    onShowOnMap: { station in
+                                        followGPS = false
+                                        focus = MapFocus(callsign: station.callsign, coordinate: station.coordinate)
+                                        selectedStation = station.callsign
+                                        tab = 0
+                                    },
+                                    path: $stationPath)
+                        .tabItem { Label("Stations", systemImage: "list.bullet") }
+                        .tag(2)
                     ChatView(core: core, account: normalizedCallsign(callsign), revision: model.revision,
                              transportError: model.chatError, recipient: $recipient)
                         .tabItem { Label("Messages", systemImage: "bubble.left.and.bubble.right") }
+                        .badge(unread)
                         .tag(1)
+                    BeaconView(core: core, connected: model.running, mapCenter: center, gps: gps)
+                        .tabItem { Label("Beacon", systemImage: "dot.radiowaves.up.forward") }
+                        .tag(3)
+                }
+            }
+            .onAppear {
+                if notify { MessageNotifier.shared.requestAuthorization() }
+            }
+            .onChange(of: center.latitude) { _, _ in
+                savedLatitude = center.latitude
+                savedLongitude = center.longitude
+            }
+            .onChange(of: tab) { _, selected in
+                if selected == 1 { clearUnread() }
+            }
+            .onChange(of: notifier.openConversation) { _, sender in
+                if let sender {
+                    openChat(with: sender)
+                    notifier.openConversation = nil
                 }
             }
             .task {
                 while !Task.isCancelled {
-                    model.refresh()
+                    handle(model.refresh())
+                    BeaconSync.apply(core: core, gps: gps)
                     do {
                         try await Task.sleep(for: .seconds(1))
                     } catch {
@@ -116,6 +166,7 @@ private struct StationMap: View {
             }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .background { gps.stop() }
+                if phase == .active && tab == 1 { clearUnread() }
             }
             .alert("Check connection settings", isPresented: $validationError) {
                 Button("OK", role: .cancel) {}
@@ -190,8 +241,16 @@ private struct StationMap: View {
             if let status = gps.status {
                 Text(status).font(.caption).foregroundStyle(.secondary)
             }
-            OSMMap(preset: tilePreset, stations: model.stations, track: gps.track,
-                   follow: gps.tracking && followGPS, center: $center, selectedStation: $selectedStation)
+            HStack {
+                Toggle(isOn: $showWeather) { Label("Weather", systemImage: "cloud.sun") }
+                Toggle(isOn: $showObjects) { Label("Objects", systemImage: "flag") }
+                Spacer()
+                Text("\(mapStations.count) on map").font(.caption).foregroundStyle(.secondary)
+            }
+            .toggleStyle(.button)
+            .padding(.horizontal)
+            OSMMap(preset: tilePreset, stations: mapStations, track: gps.track,
+                   follow: gps.tracking && followGPS, focus: focus, center: $center, selectedStation: $selectedStation)
                 .overlay(alignment: .bottomTrailing) {
                     Link("© OpenStreetMap contributors", destination: URL(string: "https://www.openstreetmap.org/copyright")!)
                         .font(.caption2)
@@ -199,13 +258,64 @@ private struct StationMap: View {
                         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 4))
                         .padding(6)
                 }
-            if let selectedStation, AprsProtocol.shared.validCallsign(value: selectedStation) {
-                Button("Message \(selectedStation)") {
-                    recipient = selectedStation
-                    tab = 1
-                }.buttonStyle(.bordered)
+            if let selectedStation, let station = model.stations.first(where: { $0.callsign == selectedStation }) {
+                HStack {
+                    Button("Details") {
+                        stationPath = [selectedStation]
+                        tab = 2
+                    }
+                    if station.canMessage {
+                        Button("Message \(selectedStation)") { openChat(with: selectedStation) }
+                    }
+                }
+                .buttonStyle(.bordered)
             }
         }
+    }
+
+    static func savedCenter() -> CLLocationCoordinate2D {
+        let defaults = UserDefaults.standard
+        guard defaults.object(forKey: "mapLatitude") != nil else { return CLLocationCoordinate2D(latitude: 42.36, longitude: -71.06) }
+        return CLLocationCoordinate2D(latitude: defaults.double(forKey: "mapLatitude"),
+                                      longitude: defaults.double(forKey: "mapLongitude"))
+    }
+
+    private var mapStations: [StationDetail] {
+        model.stations.filter { station in
+            switch station.kind {
+            case "weather": return showWeather
+            case "object", "item": return showObjects
+            default: return true
+            }
+        }
+    }
+
+    /** Distances in the station list are measured from your GPS fix, else the map center. */
+    private var origin: (coordinate: CLLocationCoordinate2D, label: String) {
+        if let fix = gps.latest { return (fix.coordinate, "your position") }
+        return (center, "map center")
+    }
+
+    private func openChat(with callsign: String) {
+        recipient = callsign
+        tab = 1
+        clearUnread()
+    }
+
+    private func clearUnread() {
+        unread = 0
+        MessageNotifier.shared.setBadge(0)
+    }
+
+    private func handle(_ alerts: [IncomingAlert]) {
+        guard !alerts.isEmpty else { return }
+        let viewing = scenePhase == .active && tab == 1
+        for alert in alerts {
+            let open = viewing && normalizedCallsign(recipient) == alert.sender
+            if !open { unread += 1 }
+            if notify && !open { MessageNotifier.shared.post(sender: alert.sender, text: alert.text) }
+        }
+        MessageNotifier.shared.setBadge(unread)
     }
 
     private func connect() {

@@ -33,6 +33,20 @@ private final class OSMTiles: MKTileOverlay {
     }
 }
 
+/** A request to center the map on a station; a new id re-triggers even for the same station. */
+struct MapFocus: Equatable {
+    let id = UUID()
+    let callsign: String
+    let coordinate: CLLocationCoordinate2D
+
+    static func == (a: MapFocus, b: MapFocus) -> Bool { a.id == b.id }
+}
+
+final class StationAnnotation: MKPointAnnotation {
+    var kind = "station"
+    var image = "mappin"
+}
+
 #if os(macOS)
 typealias NativeMapRepresentable = NSViewRepresentable
 #else
@@ -41,9 +55,10 @@ typealias NativeMapRepresentable = UIViewRepresentable
 
 struct OSMMap: NativeMapRepresentable {
     let preset: TilePreset
-    let stations: [StationMarker]
+    let stations: [StationDetail]
     let track: [CLLocation]
     let follow: Bool
+    let focus: MapFocus?
     @Binding var center: CLLocationCoordinate2D
     @Binding var selectedStation: String?
 
@@ -75,7 +90,8 @@ struct OSMMap: NativeMapRepresentable {
         private var parent: OSMMap
         private var source: TilePreset?
         private var tiles: OSMTiles?
-        private var markers: [String: MKPointAnnotation] = [:]
+        private var markers: [String: StationAnnotation] = [:]
+        private var focusID: UUID?
         private var trail: MKPolyline?
         private var position: MKPointAnnotation?
         private var previousFix: Date?
@@ -96,6 +112,14 @@ struct OSMMap: NativeMapRepresentable {
             }
             updateStations(on: map)
             updateTrack(on: map)
+            if let focus = parent.focus, focus.id != focusID {
+                focusID = focus.id
+                let span = min(map.region.span.latitudeDelta, 0.2)
+                map.setRegion(MKCoordinateRegion(center: focus.coordinate,
+                                                 span: MKCoordinateSpan(latitudeDelta: span, longitudeDelta: span)),
+                              animated: true)
+                if let marker = markers[focus.callsign] { map.selectAnnotation(marker, animated: true) }
+            }
         }
 
         private func updateStations(on map: MKMapView) {
@@ -105,18 +129,35 @@ struct OSMMap: NativeMapRepresentable {
             }
             for station in parent.stations {
                 let point = CLLocationCoordinate2D(latitude: station.latitude, longitude: station.longitude)
-                if let marker = markers[station.callsign] {
+                let image = station.symbolInfo.image
+                let subtitle = Self.subtitle(for: station)
+                if let marker = markers[station.callsign], marker.kind == station.kind, marker.image == image {
                     if marker.coordinate.latitude != point.latitude || marker.coordinate.longitude != point.longitude {
                         marker.coordinate = point
                     }
+                    if marker.subtitle != subtitle { marker.subtitle = subtitle }
                 } else {
-                    let marker = MKPointAnnotation()
+                    if let old = markers[station.callsign] { map.removeAnnotation(old) }
+                    let marker = StationAnnotation()
                     marker.coordinate = point
                     marker.title = station.callsign
+                    marker.subtitle = subtitle
+                    marker.kind = station.kind
+                    marker.image = image
                     markers[station.callsign] = marker
                     map.addAnnotation(marker)
                 }
             }
+        }
+
+        private static func subtitle(for station: StationDetail) -> String {
+            let metric = UserDefaults.standard.bool(forKey: "useMetric")
+            var parts: [String] = []
+            if let t = station.temperatureC?.doubleValue { parts.append(Units.temperature(t, metric: metric)) }
+            if let wind = station.windKph?.doubleValue { parts.append("wind \(Units.speed(kph: wind, metric: metric))") }
+            if let knots = station.speedKnots?.doubleValue, knots >= 1 { parts.append(Units.speed(knots: knots, metric: metric)) }
+            if parts.isEmpty { parts.append(station.comment.isEmpty ? station.symbolInfo.name : station.comment) }
+            return parts.joined(separator: " · ")
         }
 
         private func updateTrack(on map: MKMapView) {
@@ -171,6 +212,20 @@ struct OSMMap: NativeMapRepresentable {
         }
 
         func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
+            if let station = annotation as? StationAnnotation {
+                let view = mapView.dequeueReusableAnnotationView(withIdentifier: "station") as? MKMarkerAnnotationView
+                    ?? MKMarkerAnnotationView(annotation: station, reuseIdentifier: "station")
+                view.annotation = station
+                view.canShowCallout = true
+                view.glyphImage = makeGlyph(station.image)
+                switch station.kind {
+                case "weather": view.markerTintColor = .systemTeal
+                case "object": view.markerTintColor = .systemOrange
+                case "item": view.markerTintColor = .systemPurple
+                default: view.markerTintColor = .systemRed
+                }
+                return view
+            }
             guard let point = annotation as? MKPointAnnotation, point === position else { return nil }
             let marker = MKMarkerAnnotationView(annotation: point, reuseIdentifier: "gps")
             marker.markerTintColor = .systemBlue
@@ -194,8 +249,10 @@ struct OSMMap: NativeMapRepresentable {
 
         #if os(macOS)
         private func makeLocationGlyph() -> NSImage? { NSImage(systemSymbolName: "location.fill", accessibilityDescription: nil) }
+        private func makeGlyph(_ name: String) -> NSImage? { NSImage(systemSymbolName: name, accessibilityDescription: nil) }
         #else
         private func makeLocationGlyph() -> UIImage? { UIImage(systemName: "location.fill") }
+        private func makeGlyph(_ name: String) -> UIImage? { UIImage(systemName: name) }
         #endif
     }
 }

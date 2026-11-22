@@ -12,6 +12,10 @@ Connections default to receive-only. To send messages, select **Enable sending**
 
 In **Map**, the **Tiles** picker defaults to the maintainer's **pdeffenb** server. Choose **OpenStreetMap** to switch to the public HTTPS tiles. Select **Start GPS** and grant location access to plot your position and breadcrumb trail while the app is open. Toggle **Follow** to pan freely while recording. GPS tracking stays local to the map.
 
+**Stations** lists everything heard in range, with search, sorting by distance, last heard or callsign, and filters for stations, weather and objects. Select a station for its position, grid square, distance and bearing, movement, weather report, owner, path and packet count, with **Message** and **Show on map** buttons. On the map, weather stations are teal, objects orange and items purple, and the **Weather** and **Objects** toggles hide those layers.
+
+**Beacon** sends your position over APRS-IS from GPS or a fixed position, with your choice of symbol, comment and interval, plus **Beacon now**. Beaconing needs a verified login (**Enable sending** and your passcode) and runs only while the app is open. New messages raise a notification and a badge on **Messages**; tap the notification to open the conversation. **Metric units** and message notifications are under **Beacon → Display & alerts**.
+
 APRSERJi is available as source code. This project does not currently offer an App Store download, a public TestFlight link, or a signed iPhone/iPad installer. You can build and run it directly from Xcode without going through the App Store. The [Apple build workflow](https://github.com/kj4dxk/APRSERJi/actions/workflows/apple.yml) checks compilation for macOS, iOS Simulator, and the generic iOS device target. The device build runs without signing. Physical-device verification still requires a signed install followed by launching the app and confirming that stations appear on the map.
 
 ### Build on a Mac

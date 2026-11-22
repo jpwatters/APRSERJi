@@ -5,6 +5,8 @@ final class GPSTracker: NSObject, ObservableObject, CLLocationManagerDelegate {
     @Published private(set) var tracking = false
     @Published private(set) var track: [CLLocation] = []
     @Published private(set) var status: String?
+    /** Most recent usable fix, even when it is too close to the last one to extend the trail. */
+    @Published private(set) var latest: CLLocation?
     private let manager = CLLocationManager()
 
     override init() {
@@ -22,6 +24,7 @@ final class GPSTracker: NSObject, ObservableObject, CLLocationManagerDelegate {
 
     func stop() {
         tracking = false
+        latest = nil
         manager.stopUpdatingLocation()
         status = nil
     }
@@ -32,6 +35,7 @@ final class GPSTracker: NSObject, ObservableObject, CLLocationManagerDelegate {
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard tracking else { return }
+        if let fix = locations.last(where: { $0.horizontalAccuracy >= 0 }) { latest = fix }
         var points = track
         for fix in locations where fix.horizontalAccuracy >= 0 && abs(fix.timestamp.timeIntervalSinceNow) < 30 {
             if let last = points.last, fix.timestamp <= last.timestamp || fix.distance(from: last) < 5 { continue }
