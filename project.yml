@@ -1,4 +1,4 @@
-name: APRSISAPL
+name: APRSERJi
 options:
   deploymentTarget:
     iOS: "17.0"
@@ -9,7 +9,7 @@ settings:
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
 targets:
-  APRSISAPL-iOS:
+  APRSERJi-iOS:
     type: application
     platform: iOS
     sources: [App]
@@ -18,13 +18,13 @@ targets:
         embed: false
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: org.aprsisapl.app
+        PRODUCT_BUNDLE_IDENTIFIER: org.aprserji.app
         GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_CFBundleDisplayName: APRSISAPL
+        INFOPLIST_KEY_CFBundleDisplayName: APRSERJi
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.utilities
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         TARGETED_DEVICE_FAMILY: "1,2"
-  APRSISAPL-macOS:
+  APRSERJi-macOS:
     type: application
     platform: macOS
     sources: [App]
@@ -33,16 +33,16 @@ targets:
         embed: false
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: org.aprsisapl.app
+        PRODUCT_BUNDLE_IDENTIFIER: org.aprserji.app
         GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_CFBundleDisplayName: APRSISAPL
+        INFOPLIST_KEY_CFBundleDisplayName: APRSERJi
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.utilities
 schemes:
-  APRSISAPL-iOS:
+  APRSERJi-iOS:
     build:
       targets:
-        APRSISAPL-iOS: all
-  APRSISAPL-macOS:
+        APRSERJi-iOS: all
+  APRSERJi-macOS:
     build:
       targets:
-        APRSISAPL-macOS: all
+        APRSERJi-macOS: all

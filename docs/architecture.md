@@ -6,7 +6,6 @@
 |---|---|---|
 | [APRSIS64](https://github.com/kj4dxk/APRSIS64/tree/6286ce53ff2e79a04005aa53359c14d68dd05988) | `6286ce5` | Compose Desktop/JVM uses the core through Gradle project `:core`, pinned at `eeefa47`. |
 | [APRSISOSM standalone](https://github.com/kj4dxk/APRSISOSM/tree/a8d77e1) | `a8d77e1`, current Android release `2026.11.22.1047` | Android Java bridge and JavaScript map/chat in a WebView. Implements its own APRS client and offline OSM routing. |
-| [APRSISOSM OsmAnd fork](https://github.com/kj4dxk/APRSISOSM/tree/122ac29eab) | `122ac29eab`, `master` | `OsmAnd-shared` includes core sources at `7046627`. Its Android plugin has its own SQLite chat orchestration. |
 | [aprs-core main](https://github.com/kj4dxk/aprs-core/tree/fcea42b8428c94b8e58f3a53ac2f5f91cb23a9c2) | `fcea42b` | Kotlin sources under `commonMain`, with a JVM Gradle build. Same sources can be consumed by an Apple Kotlin Multiplatform build. |
 
 ### What to consolidate
@@ -23,7 +22,7 @@
 
 Make the canonical core a Kotlin Multiplatform library that publishes a JVM/Android artifact and an Apple XCFramework. Keep pure policy in `commonMain`. Keep APRS-IS session behavior and Ktor in shared code unless a tested platform gap requires a byte-stream adapter. Export small, typed snapshots and commands to Swift. Keep maps, rendering, credentials, database/file I/O, location permissions, background lifecycle, device APIs and speech in app adapters. Version the public interfaces and pin all three apps to the same release after the branch reconciliation.
 
-The current APRSISAPL build compiles the pinned core sources directly with Kotlin/Native. This preserves the core's published JVM Gradle entry point while the Apple integration is proven. CI builds the framework, runs the common core tests on macOS, and compiles both app targets.
+The current APRSERJi build compiles the pinned core sources directly with Kotlin/Native. This preserves the core's published JVM Gradle entry point while the Apple integration is proven. CI builds the framework, runs the common core tests on macOS, and compiles both app targets.
 
 ## Apple stack
 

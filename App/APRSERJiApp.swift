@@ -3,7 +3,7 @@ import MapKit
 import SwiftUI
 
 @main
-struct APRSISAPLApp: App {
+struct APRSERJiApp: App {
     var body: some Scene {
         WindowGroup {
             StationMap()

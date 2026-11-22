@@ -1,4 +1,4 @@
-package org.aprsisapl
+package org.aprserji
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -19,7 +19,7 @@ class StationFeed {
     fun start(callsign: String, host: String, port: Int, latitude: Double, longitude: Double): Boolean {
         val config = try {
             AprsIsConfig(callsign = callsign, host = host, port = port, latitude = latitude,
-                longitude = longitude, application = "APRSISAPL")
+                longitude = longitude, application = "APRSERJi")
         } catch (_: IllegalArgumentException) {
             return false
         }

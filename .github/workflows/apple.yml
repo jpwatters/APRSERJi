@@ -20,6 +20,6 @@ jobs:
           brew install xcodegen
           xcodegen generate
       - name: Build macOS
-        run: xcodebuild -scheme APRSISAPL-macOS -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build
+        run: xcodebuild -scheme APRSERJi-macOS -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build
       - name: Build iOS simulator
-        run: xcodebuild -scheme APRSISAPL-iOS -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
+        run: xcodebuild -scheme APRSERJi-iOS -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build

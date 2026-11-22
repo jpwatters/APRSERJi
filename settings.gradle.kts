@@ -1,4 +1,4 @@
 pluginManagement {
     repositories { gradlePluginPortal(); mavenCentral() }
 }
-rootProject.name = "APRSISAPL"
+rootProject.name = "APRSERJi"
