@@ -145,6 +145,7 @@ private struct StationMap: View {
     @State private var center = StationMap.savedCenter()
     @State private var focus: MapFocus?
     @State private var stationPath: [String] = []
+    @State private var showMapControls = false
     @AppStorage("rangeGPSMiles") private var rangeGPS = 500
     @AppStorage("rangeLastFixMiles") private var rangeLastFix = 500
     @AppStorage("rangeCenterMiles") private var rangeCenter = 500
@@ -156,8 +157,9 @@ private struct StationMap: View {
 
     var body: some View {
         if let core = model.core {
-            VStack(spacing: 12) {
-                connectionSettings
+            VStack(spacing: tab == 0 ? 0 : 12) {
+                // On the Map tab the settings move into the map's floating panel so the map fills the window.
+                if tab != 0 { connectionSettings }
                 TabView(selection: $tab) {
                     stationMap
                         .tabItem { Label("Map", systemImage: "map") }
@@ -302,50 +304,93 @@ private struct StationMap: View {
     }
 
     private var stationMap: some View {
-        VStack(spacing: 6) {
+        OSMMap(preset: tilePreset, stations: mapStations, track: gps.track,
+               follow: gps.tracking && followGPS, focus: focus,
+               origin: origin.coordinate, originLabel: origin.label,
+               onDetails: { callsign in
+                   stationPath = [callsign]
+                   tab = 2
+               },
+               onMessage: { openChat(with: $0) },
+               center: $center, selectedStation: $selectedStation)
+            .overlay(alignment: .bottomTrailing) {
+                Link("© OpenStreetMap contributors", destination: URL(string: "https://www.openstreetmap.org/copyright")!)
+                    .font(.caption2)
+                    .padding(5)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 4))
+                    .padding(6)
+            }
+            .overlay(alignment: .top) { mapOverlay }
+        // Station details, zoom and messaging live in the map's station bubble.
+    }
+
+    /** A slim status bar floating over the map; the full controls open as a panel beneath it. */
+    private var mapOverlay: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Circle().fill(statusColor).frame(width: 9, height: 9)
+                Text(model.status).font(.callout.bold())
+                Text("· \(mapStations.count) on map").font(.callout).foregroundStyle(.secondary)
+                Spacer(minLength: 8)
+                Button { if gps.tracking { gps.stop() } else { gps.start() } } label: {
+                    Image(systemName: gps.tracking ? "location.fill" : "location")
+                }
+                .help(gps.tracking ? "Stop GPS" : "Start GPS")
+                if gps.tracking {
+                    Toggle(isOn: $followGPS) { Image(systemName: "scope") }
+                        .toggleStyle(.button)
+                        .help("Follow GPS")
+                }
+                Button { withAnimation(.snappy) { showMapControls.toggle() } } label: {
+                    Image(systemName: showMapControls ? "chevron.up" : "slider.horizontal.3")
+                }
+                .help(showMapControls ? "Hide settings" : "Connection and map settings")
+            }
+            .buttonStyle(.borderless)
+            if showMapControls {
+                Divider()
+                // Scrolls only when the window is too short to show every setting.
+                ViewThatFits(in: .vertical) {
+                    mapControls
+                    ScrollView { mapControls }
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .frame(maxWidth: 640)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .shadow(radius: 3, y: 1)
+        .padding(10)
+    }
+
+    private var mapControls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            connectionSettings.padding(.horizontal, -16).padding(.top, -16)
+            Divider()
             HStack {
                 Picker("Tiles", selection: $tilePreset) {
                     ForEach(TilePreset.allCases) { preset in Text(preset.rawValue).tag(preset) }
                 }
                 .pickerStyle(.menu)
-                Spacer()
-                Button(gps.tracking ? "Stop GPS" : "Start GPS") {
-                    if gps.tracking { gps.stop() } else { gps.start() }
-                }
-                if gps.tracking {
-                    Toggle("Follow", isOn: $followGPS).toggleStyle(.button)
-                }
+                .fixedSize()
+                Toggle(isOn: $showWeather) { Label("Weather", systemImage: "cloud.sun") }
+                Toggle(isOn: $showObjects) { Label("Objects", systemImage: "flag") }
             }
-            .padding(.horizontal)
-            rangeSettings
+            .toggleStyle(.button)
+            rangeSettings.padding(.horizontal, -16)
             if let status = gps.status {
                 Text(status).font(.caption).foregroundStyle(.secondary)
             }
-            HStack {
-                Toggle(isOn: $showWeather) { Label("Weather", systemImage: "cloud.sun") }
-                Toggle(isOn: $showObjects) { Label("Objects", systemImage: "flag") }
-                Spacer()
-                Text("\(mapStations.count) on map").font(.caption).foregroundStyle(.secondary)
-            }
-            .toggleStyle(.button)
-            .padding(.horizontal)
-            OSMMap(preset: tilePreset, stations: mapStations, track: gps.track,
-                   follow: gps.tracking && followGPS, focus: focus,
-                   origin: origin.coordinate, originLabel: origin.label,
-                   onDetails: { callsign in
-                       stationPath = [callsign]
-                       tab = 2
-                   },
-                   onMessage: { openChat(with: $0) },
-                   center: $center, selectedStation: $selectedStation)
-                .overlay(alignment: .bottomTrailing) {
-                    Link("© OpenStreetMap contributors", destination: URL(string: "https://www.openstreetmap.org/copyright")!)
-                        .font(.caption2)
-                        .padding(5)
-                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 4))
-                        .padding(6)
-                }
-            // Station details, zoom and messaging now live in the map's station bubble.
+        }
+    }
+
+    private var statusColor: Color {
+        switch model.status {
+        case "Verified": return .green
+        case "Receiving": return .blue
+        case "Disconnected": return .gray
+        default: return .orange
         }
     }
 
