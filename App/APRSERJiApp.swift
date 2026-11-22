@@ -330,7 +330,14 @@ private struct StationMap: View {
             .toggleStyle(.button)
             .padding(.horizontal)
             OSMMap(preset: tilePreset, stations: mapStations, track: gps.track,
-                   follow: gps.tracking && followGPS, focus: focus, center: $center, selectedStation: $selectedStation)
+                   follow: gps.tracking && followGPS, focus: focus,
+                   origin: origin.coordinate, originLabel: origin.label,
+                   onDetails: { callsign in
+                       stationPath = [callsign]
+                       tab = 2
+                   },
+                   onMessage: { openChat(with: $0) },
+                   center: $center, selectedStation: $selectedStation)
                 .overlay(alignment: .bottomTrailing) {
                     Link("© OpenStreetMap contributors", destination: URL(string: "https://www.openstreetmap.org/copyright")!)
                         .font(.caption2)
@@ -338,18 +345,7 @@ private struct StationMap: View {
                         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 4))
                         .padding(6)
                 }
-            if let selectedStation, let station = model.stations.first(where: { $0.callsign == selectedStation }) {
-                HStack {
-                    Button("Details") {
-                        stationPath = [selectedStation]
-                        tab = 2
-                    }
-                    if station.canMessage {
-                        Button("Message \(selectedStation)") { openChat(with: selectedStation) }
-                    }
-                }
-                .buttonStyle(.bordered)
-            }
+            // Station details, zoom and messaging now live in the map's station bubble.
         }
     }
 

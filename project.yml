@@ -8,6 +8,9 @@ settings:
     SWIFT_VERSION: "5.0"
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
+    # Stable signing with KC9KKO's team keeps Keychain access approved between builds.
+    DEVELOPMENT_TEAM: 7Q943H255L
+    CODE_SIGN_STYLE: Automatic
 targets:
   APRSERJi-iOS:
     type: application
@@ -28,7 +31,7 @@ targets:
         embed: false
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: org.aprserji.app
+        PRODUCT_BUNDLE_IDENTIFIER: com.kc9kko.APRSERJi
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_CFBundleDisplayName: APRSERJi
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.utilities
@@ -43,6 +46,12 @@ targets:
         NSLocationWhenInUseUsageDescription: *locationUsage
         NSLocationUsageDescription: *locationUsage
         NSAppTransportSecurity: *tileTransport
+    entitlements:
+      path: build/macOS.entitlements
+      properties:
+        # Gives the app its own data-protection keychain group, so the passcode needs no approval prompt.
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)com.kc9kko.APRSERJi
     sources: [App]
     dependencies:
       - sdk: libsqlite3.tbd
@@ -50,7 +59,7 @@ targets:
         embed: false
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: org.aprserji.app
+        PRODUCT_BUNDLE_IDENTIFIER: com.kc9kko.APRSERJi
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_CFBundleDisplayName: APRSERJi
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.utilities

@@ -59,6 +59,11 @@ struct OSMMap: NativeMapRepresentable {
     let track: [CLLocation]
     let follow: Bool
     let focus: MapFocus?
+    /** Where the bubble measures distance from: your GPS fix, else the map center. */
+    let origin: CLLocationCoordinate2D
+    let originLabel: String
+    let onDetails: (String) -> Void
+    let onMessage: (String) -> Void
     @Binding var center: CLLocationCoordinate2D
     @Binding var selectedStation: String?
 
@@ -92,6 +97,9 @@ struct OSMMap: NativeMapRepresentable {
         private var tiles: OSMTiles?
         private var markers: [String: StationAnnotation] = [:]
         private var focusID: UUID?
+        private weak var mapView: MKMapView?
+        private var callout: CalloutHost?
+        private var calloutStation: StationDetail?
         private var trail: MKPolyline?
         private var position: MKPointAnnotation?
         private var previousFix: Date?
@@ -110,8 +118,10 @@ struct OSMMap: NativeMapRepresentable {
                 tiles = overlay
                 source = parent.preset
             }
+            mapView = map
             updateStations(on: map)
             updateTrack(on: map)
+            refreshCallout()
             if let focus = parent.focus, focus.id != focusID {
                 focusID = focus.id
                 let span = min(map.region.span.latitudeDelta, 0.2)
@@ -217,6 +227,7 @@ struct OSMMap: NativeMapRepresentable {
                     ?? MKMarkerAnnotationView(annotation: station, reuseIdentifier: "station")
                 view.annotation = station
                 view.canShowCallout = true
+                view.detailCalloutAccessoryView = nil
                 view.glyphImage = makeGlyph(station.image)
                 switch station.kind {
                 case "weather": view.markerTintColor = .systemTeal
@@ -233,7 +244,38 @@ struct OSMMap: NativeMapRepresentable {
             return marker
         }
 
+        private func calloutContent(for station: StationDetail) -> StationCallout {
+            let callsign = station.callsign
+            return StationCallout(
+                station: station, origin: parent.origin, originLabel: parent.originLabel,
+                onZoom: { [weak self] in self?.zoom(to: callsign) },
+                onDetails: { [weak self] in self?.parent.onDetails(callsign) },
+                onMessage: { [weak self] in self?.parent.onMessage(callsign) })
+        }
+
+        /** Keeps an open bubble current as new packets arrive. */
+        private func refreshCallout() {
+            guard let callout, let shown = calloutStation,
+                  let latest = parent.stations.first(where: { $0.callsign == shown.callsign }),
+                  latest != shown else { return }
+            calloutStation = latest
+            callout.update(calloutContent(for: latest))
+        }
+
+        private func zoom(to callsign: String) {
+            guard let map = mapView, let marker = markers[callsign] else { return }
+            map.setRegion(MKCoordinateRegion(center: marker.coordinate, latitudinalMeters: 3_000, longitudinalMeters: 3_000),
+                          animated: true)
+        }
+
         func mapView(_ mapView: MKMapView, didSelect view: MKAnnotationView) {
+            if let marker = view.annotation as? StationAnnotation, let callsign = marker.title,
+               let station = parent.stations.first(where: { $0.callsign == callsign }) {
+                let host = CalloutHost(calloutContent(for: station))
+                callout = host
+                calloutStation = station
+                view.detailCalloutAccessoryView = host.view
+            }
             let callsign = (view.annotation as? MKPointAnnotation)?.title
             DispatchQueue.main.async { [weak self] in
                 self?.parent.selectedStation = callsign.flatMap { self?.markers[$0] != nil ? $0 : nil }
@@ -241,6 +283,11 @@ struct OSMMap: NativeMapRepresentable {
         }
 
         func mapView(_ mapView: MKMapView, didDeselect view: MKAnnotationView) {
+            if view.annotation is StationAnnotation {
+                view.detailCalloutAccessoryView = nil
+                callout = nil
+                calloutStation = nil
+            }
             let callsign = (view.annotation as? MKPointAnnotation)?.title
             DispatchQueue.main.async { [weak self] in
                 if self?.parent.selectedStation == callsign { self?.parent.selectedStation = nil }
