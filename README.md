@@ -18,4 +18,4 @@ open APRSERJi.xcodeproj
 
 Select **APRSERJi-macOS** or **APRSERJi-iOS**. Select an iOS simulator to run without provisioning. For a physical device, choose a signing team and a bundle identifier you control. The minimum deployment targets are iOS/iPadOS 17 and macOS 14.
 
-New APRSERJi code is licensed under AGPL-3.0. The pinned core preserves its source notices, including the original GPLv3-or-later terms for inherited portions.
+APRSERJi and aprs-core are licensed under AGPL-3.0. The shared engine is based on APRSIS32 and APRSISMO.
