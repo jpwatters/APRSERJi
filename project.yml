@@ -12,6 +12,15 @@ targets:
   APRSERJi-iOS:
     type: application
     platform: iOS
+    info:
+      path: build/iOS-Info.plist
+      properties:
+        NSLocationWhenInUseUsageDescription: &locationUsage APRSERJi uses your location to show and follow your GPS track while the app is open.
+        NSAppTransportSecurity: &tileTransport
+          NSExceptionDomains:
+            pdeffenb.homeip.net:
+              NSExceptionAllowsInsecureHTTPLoads: true
+        UILaunchScreen: {}
     sources: [App]
     dependencies:
       - sdk: libsqlite3.tbd
@@ -20,7 +29,6 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: org.aprserji.app
-        GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: APRSERJi
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.utilities
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
@@ -28,6 +36,12 @@ targets:
   APRSERJi-macOS:
     type: application
     platform: macOS
+    info:
+      path: build/macOS-Info.plist
+      properties:
+        NSLocationWhenInUseUsageDescription: *locationUsage
+        NSLocationUsageDescription: *locationUsage
+        NSAppTransportSecurity: *tileTransport
     sources: [App]
     dependencies:
       - sdk: libsqlite3.tbd
@@ -36,7 +50,6 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: org.aprserji.app
-        GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: APRSERJi
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.utilities
 schemes:

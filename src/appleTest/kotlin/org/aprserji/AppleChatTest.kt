@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 package org.aprserji
 
+import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -17,6 +18,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
+@OptIn(ExperimentalForeignApi::class)
 class AppleChatTest {
     @Test
     fun outboxSurvivesReopenAndSharedSessionHandlesBothDirections() = runBlocking {

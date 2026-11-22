@@ -75,9 +75,13 @@ private final class AprsModel: ObservableObject {
 
 private struct StationMap: View {
     @ObservedObject var model: AprsModel
+    @Environment(\.scenePhase) private var scenePhase
     @AppStorage("callsign") private var callsign = ""
     @AppStorage("server") private var server = "rotate.aprs2.net"
     @AppStorage("port") private var port = "14580"
+    @AppStorage("tilePreset") private var tilePreset: TilePreset = .project
+    @StateObject private var gps = GPSTracker()
+    @State private var followGPS = true
     @State private var enableSending = false
     @State private var passcode = ""
     @State private var validationError = false
@@ -85,11 +89,6 @@ private struct StationMap: View {
     @State private var selectedStation: String?
     @State private var tab = 0
     @State private var center = CLLocationCoordinate2D(latitude: 42.36, longitude: -71.06)
-    @State private var camera: MapCameraPosition = .region(MKCoordinateRegion(
-        center: CLLocationCoordinate2D(latitude: 42.36, longitude: -71.06),
-        latitudinalMeters: 120_000,
-        longitudinalMeters: 120_000
-    ))
 
     var body: some View {
         if let core = model.core {
@@ -114,6 +113,9 @@ private struct StationMap: View {
                         return
                     }
                 }
+            }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .background { gps.stop() }
             }
             .alert("Check connection settings", isPresented: $validationError) {
                 Button("OK", role: .cancel) {}
@@ -170,24 +172,38 @@ private struct StationMap: View {
     }
 
     private var stationMap: some View {
-        Map(position: $camera, selection: $selectedStation) {
-            ForEach(model.stations, id: \.callsign) { station in
-                Marker(station.callsign, coordinate: CLLocationCoordinate2D(
-                    latitude: station.latitude, longitude: station.longitude
-                )).tag(station.callsign)
+        VStack(spacing: 6) {
+            HStack {
+                Picker("Tiles", selection: $tilePreset) {
+                    ForEach(TilePreset.allCases) { preset in Text(preset.rawValue).tag(preset) }
+                }
+                .pickerStyle(.menu)
+                Spacer()
+                Button(gps.tracking ? "Stop GPS" : "Start GPS") {
+                    if gps.tracking { gps.stop() } else { gps.start() }
+                }
+                if gps.tracking {
+                    Toggle("Follow", isOn: $followGPS).toggleStyle(.button)
+                }
             }
-        }
-        .onMapCameraChange(frequency: .onEnd) { context in
-            center = context.region.center
-        }
-        .safeAreaInset(edge: .bottom) {
+            .padding(.horizontal)
+            if let status = gps.status {
+                Text(status).font(.caption).foregroundStyle(.secondary)
+            }
+            OSMMap(preset: tilePreset, stations: model.stations, track: gps.track,
+                   follow: gps.tracking && followGPS, center: $center, selectedStation: $selectedStation)
+                .overlay(alignment: .bottomTrailing) {
+                    Link("© OpenStreetMap contributors", destination: URL(string: "https://www.openstreetmap.org/copyright")!)
+                        .font(.caption2)
+                        .padding(5)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 4))
+                        .padding(6)
+                }
             if let selectedStation, AprsProtocol.shared.validCallsign(value: selectedStation) {
                 Button("Message \(selectedStation)") {
                     recipient = selectedStation
                     tab = 1
-                }
-                .buttonStyle(.borderedProminent)
-                .padding()
+                }.buttonStyle(.bordered)
             }
         }
     }
@@ -204,5 +220,6 @@ private struct StationMap: View {
             return
         }
         callsign = account
+        passcode = ""
     }
 }

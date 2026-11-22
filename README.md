@@ -2,13 +2,15 @@
 
 Native APRS station map and two-way messaging for iPhone, iPad, and Mac. Move the map to the area you want to monitor, enter your callsign, and select **Connect**. The feed uses a 100 km filter centered on the map when you connect.
 
-The SwiftUI app uses MapKit and the same pinned Kotlin [aprs-core](https://github.com/kj4dxk/aprs-core) revision as APRSERJ64 on Windows and APRSERJa on Android. The core provides the APRS-IS session, packet decoding, and SQLite chat and outbox logic. See the [cross-platform audit and Apple architecture](docs/architecture.md) for the path to Android feature parity.
+The SwiftUI app uses OpenStreetMap-derived raster tiles and the same pinned Kotlin [aprs-core](https://github.com/kj4dxk/aprs-core) revision as APRSERJ64 on Windows and APRSERJa on Android. The core provides the APRS-IS session, packet decoding, and SQLite chat and outbox logic. See the [cross-platform audit and Apple architecture](docs/architecture.md) for the path to Android feature parity.
 
 [Windows · APRSERJ64](https://github.com/kj4dxk/APRSERJ64) · [Android · APRSERJa](https://github.com/kj4dxk/APRSERJa)
 
 ## Getting started
 
 Connections default to receive-only. To send messages, select **Enable sending**, enter your APRS-IS passcode, and connect. Open **Messages** or select a station on the map and choose **Message**. Use **Queue** to save a message even while disconnected. The outbox survives app restarts and resumes after a verified connection with the same callsign and SSID. Chat history is stored locally and the app does not save your passcode to disk.
+
+In **Map**, the **Tiles** picker defaults to the maintainer's **pdeffenb** server. Choose **OpenStreetMap** to switch to the public HTTPS tiles. Select **Start GPS** and grant location access to plot your position and breadcrumb trail while the app is open. Toggle **Follow** to pan freely while recording. GPS tracking stays local to the map.
 
 APRSERJi is available as source code. This project does not currently offer an App Store download, a public TestFlight link, or a signed iPhone/iPad installer. You can build and run it directly from Xcode without going through the App Store. The [Apple build workflow](https://github.com/kj4dxk/APRSERJi/actions/workflows/apple.yml) checks compilation for macOS, iOS Simulator, and the generic iOS device target. The device build runs without signing. Physical-device verification still requires a signed install followed by launching the app and confirming that stations appear on the map.
 
