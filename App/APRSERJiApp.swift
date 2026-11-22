@@ -146,6 +146,9 @@ private struct StationMap: View {
     @State private var focus: MapFocus?
     @State private var stationPath: [String] = []
     @State private var showMapControls = false
+    /** Set at launch when a verified passcode is saved; the app connects on its own at this time. */
+    @State private var autoConnectAt: Date?
+    @State private var autoConnectChecked = false
     @AppStorage("rangeGPSMiles") private var rangeGPS = 500
     @AppStorage("rangeLastFixMiles") private var rangeLastFix = 500
     @AppStorage("rangeCenterMiles") private var rangeCenter = 500
@@ -189,7 +192,10 @@ private struct StationMap: View {
             .onAppear {
                 if notify { MessageNotifier.shared.requestAuthorization() }
             }
-            .onAppear { refreshSavedPasscode() }
+            .onAppear {
+                refreshSavedPasscode()
+                scheduleAutoConnect()
+            }
             .onChange(of: callsign) { _, _ in refreshSavedPasscode() }
             .onChange(of: model.status) { _, status in
                 // Only a passcode the server has verified is ever stored.
@@ -216,6 +222,13 @@ private struct StationMap: View {
                     handle(model.refresh())
                     BeaconSync.apply(core: core, gps: gps)
                     model.updateCoverage(coverageAreas)
+                    if let due = autoConnectAt, Date() >= due {
+                        autoConnectAt = nil
+                        if !model.running {
+                            enableSending = true
+                            connect()
+                        }
+                    }
                     do {
                         try await Task.sleep(for: .seconds(1))
                     } catch {
@@ -278,6 +291,7 @@ private struct StationMap: View {
 
             HStack {
                 Button(model.running ? "Disconnect" : "Connect") {
+                    autoConnectAt = nil
                     if model.running { model.disconnect() } else { connect() }
                 }
                 Text(model.status).accessibilityIdentifier("connectionStatus")
@@ -289,6 +303,7 @@ private struct StationMap: View {
                     Text("Receive only").foregroundStyle(.secondary)
                 }
             }
+            autoConnectNotice
             if let reply = model.loginReply {
                 let unverified = reply.localizedCaseInsensitiveContains("unverified")
                 Text(unverified && enableSending
@@ -347,6 +362,7 @@ private struct StationMap: View {
                 .help(showMapControls ? "Hide settings" : "Connection and map settings")
             }
             .buttonStyle(.borderless)
+            if !showMapControls { autoConnectNotice }
             if showMapControls {
                 Divider()
                 // Scrolls only when the window is too short to show every setting.
@@ -489,6 +505,35 @@ private struct StationMap: View {
             if notify && !open { MessageNotifier.shared.post(sender: alert.sender, text: alert.text) }
         }
         MessageNotifier.shared.setBadge(unread)
+    }
+
+    /** Once per launch: with a valid callsign and a server-verified passcode saved, connect in 15 seconds. */
+    private func scheduleAutoConnect() {
+        guard !autoConnectChecked else { return }
+        autoConnectChecked = true
+        let account = normalizedCallsign(callsign)
+        guard !model.running, AprsProtocol.shared.validCallsign(value: account),
+              PasscodeKeychain.load(for: account) != nil else { return }
+        autoConnectAt = Date().addingTimeInterval(15)
+    }
+
+    /** "Connecting automatically in 12 s" with a Cancel button, shown while the countdown runs. */
+    @ViewBuilder private var autoConnectNotice: some View {
+        if let due = autoConnectAt, !model.running {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                HStack(spacing: 8) {
+                    Text("Connecting automatically in \(max(0, Int(due.timeIntervalSince(context.date).rounded(.up)))) s")
+                        .font(.caption)
+                    Button("Connect now") {
+                        autoConnectAt = nil
+                        enableSending = true
+                        connect()
+                    }
+                    Button("Cancel") { autoConnectAt = nil }
+                }
+                .buttonStyle(.borderless)
+            }
+        }
     }
 
     private func refreshSavedPasscode() {
