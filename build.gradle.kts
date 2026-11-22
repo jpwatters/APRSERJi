@@ -19,7 +19,7 @@ kotlin {
     }
     sourceSets {
         commonMain {
-            kotlin.srcDir(core.dir("src/commonMain/kotlin"))
+            kotlin.srcDirs(core.dir("src/commonMain/kotlin"), core.dir("src/appleMain/kotlin"))
             dependencies {
                 implementation("io.ktor:ktor-network:3.1.3")
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.1")
@@ -29,9 +29,6 @@ kotlin {
         commonTest {
             kotlin.srcDir(core.dir("src/commonTest/kotlin"))
             dependencies { implementation(kotlin("test")) }
-        }
-        named("appleMain") {
-            kotlin.srcDir(core.dir("src/appleMain/kotlin"))
         }
     }
 }
