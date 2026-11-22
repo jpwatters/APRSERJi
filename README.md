@@ -8,7 +8,7 @@ The SwiftUI app uses OpenStreetMap-derived raster tiles and the same pinned Kotl
 
 ## Getting started
 
-Connections default to receive-only. To send messages, select **Enable sending**, enter your APRS-IS passcode, and connect. Open **Messages** or select a station on the map and choose **Message**. Use **Queue** to save a message even while disconnected. The outbox survives app restarts and resumes after a verified connection with the same callsign and SSID. Chat history is stored locally and the app does not save your passcode to disk.
+Connections default to receive-only. To send messages, select **Enable sending**, enter your APRS-IS passcode, and connect. Open **Messages** or select a station on the map and choose **Message**. Use **Queue** to save a message even while disconnected. The outbox survives app restarts and resumes after a verified connection with the same callsign and SSID. Chat history is stored locally. Once the server verifies your passcode, the app saves it in the system Keychain (encrypted, one entry per base callsign) and uses it on later connections; type a new passcode to replace it after it verifies, or select **Forget** to remove it.
 
 In **Map**, the **Tiles** picker defaults to the maintainer's **pdeffenb** server. Choose **OpenStreetMap** to switch to the public HTTPS tiles. Select **Start GPS** and grant location access to plot your position and breadcrumb trail while the app is open. Toggle **Follow** to pan freely while recording. GPS tracking stays local to the map.
 

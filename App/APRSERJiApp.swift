@@ -27,6 +27,7 @@ private final class AprsModel: ObservableObject {
     @Published private(set) var status = "Disconnected"
     @Published private(set) var revision: Int64 = 0
     @Published private(set) var chatError: String?
+    @Published private(set) var loginReply: String?
 
     init() {
         do {
@@ -56,6 +57,7 @@ private final class AprsModel: ObservableObject {
         core?.stop()
         running = false
         stations = []
+        loginReply = nil
         status = "Disconnected"
         chatError = nil
     }
@@ -67,6 +69,7 @@ private final class AprsModel: ObservableObject {
         if revision != core.revision { revision = core.revision }
         if chatError != core.chatError { chatError = core.chatError }
         guard running else { return [] }
+        if loginReply != core.loginReply { loginReply = core.loginReply }
         let snapshot = core.stationDetails
         if stations != snapshot { stations = snapshot }
         let nextStatus: String
@@ -90,8 +93,11 @@ private struct StationMap: View {
     @AppStorage("tilePreset") private var tilePreset: TilePreset = .project
     @StateObject private var gps = GPSTracker()
     @State private var followGPS = true
-    @State private var enableSending = false
+    @AppStorage("enableSending") private var enableSending = false
     @State private var passcode = ""
+    /** Passcode used for the current connection, saved to the Keychain once the server verifies it. */
+    @State private var pendingPasscode: String?
+    @State private var hasSavedPasscode = false
     @State private var validationError = false
     @State private var recipient = ""
     @State private var selectedStation: String?
@@ -139,6 +145,15 @@ private struct StationMap: View {
             }
             .onAppear {
                 if notify { MessageNotifier.shared.requestAuthorization() }
+            }
+            .onAppear { refreshSavedPasscode() }
+            .onChange(of: callsign) { _, _ in refreshSavedPasscode() }
+            .onChange(of: model.status) { _, status in
+                // Only a passcode the server has verified is ever stored.
+                guard status == "Verified", let verified = pendingPasscode else { return }
+                pendingPasscode = nil
+                PasscodeKeychain.save(verified, for: normalizedCallsign(callsign))
+                refreshSavedPasscode()
             }
             .onChange(of: center.latitude) { _, _ in
                 savedLatitude = center.latitude
@@ -201,7 +216,16 @@ private struct StationMap: View {
                 if enableSending {
                     GridRow {
                         Text("Passcode")
-                        SecureField("APRS-IS passcode", text: $passcode)
+                        HStack {
+                            SecureField(hasSavedPasscode ? "Saved in Keychain (type to replace)" : "APRS-IS passcode",
+                                        text: $passcode)
+                            if hasSavedPasscode {
+                                Button("Forget") {
+                                    PasscodeKeychain.delete(for: normalizedCallsign(callsign))
+                                    refreshSavedPasscode()
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -217,6 +241,16 @@ private struct StationMap: View {
                 if !enableSending && !model.running {
                     Text("Receive only").foregroundStyle(.secondary)
                 }
+            }
+            if let reply = model.loginReply {
+                let unverified = reply.localizedCaseInsensitiveContains("unverified")
+                Text(unverified && enableSending
+                     ? "Server did not accept the passcode: \(reply)"
+                     : "Server: \(reply)")
+                    .font(.caption)
+                    .foregroundStyle(unverified && enableSending ? Color.red : Color.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
             }
         }
         .padding([.horizontal, .top])
@@ -318,9 +352,15 @@ private struct StationMap: View {
         MessageNotifier.shared.setBadge(unread)
     }
 
+    private func refreshSavedPasscode() {
+        hasSavedPasscode = PasscodeKeychain.load(for: normalizedCallsign(callsign)) != nil
+    }
+
     private func connect() {
         let account = normalizedCallsign(callsign)
-        let credential = passcode.trimmingCharacters(in: .whitespacesAndNewlines)
+        let typed = passcode.trimmingCharacters(in: .whitespacesAndNewlines)
+        // A newly typed passcode takes precedence over the saved one and replaces it once verified.
+        let credential = typed.isEmpty ? (PasscodeKeychain.load(for: account) ?? "") : typed
         guard let tcpPort = Int32(port.trimmingCharacters(in: .whitespacesAndNewlines)),
               !enableSending || (!credential.isEmpty && credential != "-1"),
               model.connect(account: account, passcode: enableSending ? credential : "-1",
@@ -330,6 +370,7 @@ private struct StationMap: View {
             return
         }
         callsign = account
+        pendingPasscode = enableSending && !typed.isEmpty ? typed : nil
         passcode = ""
     }
 }

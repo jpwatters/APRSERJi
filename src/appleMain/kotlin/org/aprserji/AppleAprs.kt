@@ -57,6 +57,9 @@ class AppleAprs @Throws(Exception::class) constructor(path: String, private val 
     val stationDetails: List<StationDetail> get() = details.value
     val revision: Long get() = store.revision.value
     val chatError: String? get() = transportError.value
+    /** The server's latest login response (passcodes are already redacted by the core), or null. */
+    val loginReply: String?
+        get() = client?.serverMessages?.value?.lastOrNull { it.contains("logresp", ignoreCase = true) }
 
     /** OFF, NOT_CONNECTED, NOT_VERIFIED, NO_POSITION, LOW_ACCURACY, SCHEDULED, TOO_SOON, SENT or FAILED. */
     val beaconState: String get() = beaconStatus.value
