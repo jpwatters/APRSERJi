@@ -75,7 +75,52 @@ class AppleAprs @Throws(Exception::class) constructor(path: String, private val 
         } catch (_: IllegalArgumentException) {
             return false
         }
+        return begin(config, callsign)
+    }
+
+    /**
+     * Connects with one range circle per area. [areas] is "lat,lon;lat,lon;…" (up to four points) and
+     * [radiusKm] applies to each, e.g. 805 km for 500 miles. The core's single range filter stops at 500 km,
+     * so this sends the equivalent javAPRSSrvr r/ terms as a custom filter.
+     */
+    fun startAreas(callsign: String, passcode: String, host: String, port: Int, areas: String, radiusKm: Int): Boolean {
+        val points = parseAreas(areas) ?: return false
+        if (points.isEmpty() || points.size > 4 || radiusKm !in 1..2000) return false
+        val filter = points.joinToString(" ") { (lat, lon) -> "r/${coordinate(lat)}/${coordinate(lon)}/$radiusKm" }
+        val config = try {
+            AprsIsConfig(callsign, passcode, host, port, points[0].first, points[0].second,
+                filterMode = "custom", customFilter = filter,
+                application = "APRSERJi", applicationVersion = applicationVersion)
+        } catch (_: IllegalArgumentException) {
+            return false
+        }
+        return begin(config, callsign)
+    }
+
+    /** The server filter in use, for display. */
+    val activeFilter: String get() = filterText.value
+
+    private val filterText = MutableStateFlow("")
+
+    private fun parseAreas(text: String): List<Pair<Double, Double>>? = runCatching {
+        text.split(';').filter { it.isNotBlank() }.map { area ->
+            val (lat, lon) = area.split(',').map { it.trim().toDouble() }
+            AprsFix(lat, lon, 0) // validates the range
+            lat to lon
+        }
+    }.getOrNull()
+
+    /** Fixed-point text; Double.toString could produce exponent notation the server rejects. */
+    private fun coordinate(value: Double): String {
+        val scaled = kotlin.math.round(value * 10_000).toLong()
+        val magnitude = kotlin.math.abs(scaled)
+        return (if (scaled < 0) "-" else "") + "${magnitude / 10_000}." + (magnitude % 10_000).toString().padStart(4, '0')
+    }
+
+    private fun begin(config: AprsIsConfig, callsign: String): Boolean {
         stop()
+        filterText.value = org.aprsfoundation.core.AprsFilters.compose(callsign, config.latitude, config.longitude,
+            config.radiusKm, config.filterMode, config.customFilter)
         val next = AprsIsClient()
         client = next
         session = ChatSession(callsign, next, store, scope) { transportError.value = it }
@@ -110,6 +155,7 @@ class AppleAprs @Throws(Exception::class) constructor(path: String, private val 
         client?.stop()
         client = null
         transportError.value = null
+        filterText.value = ""
     }
 
     /** Returns and clears chat messages that arrived since the last call. */

@@ -35,7 +35,10 @@ final class GPSTracker: NSObject, ObservableObject, CLLocationManagerDelegate {
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard tracking else { return }
-        if let fix = locations.last(where: { $0.horizontalAccuracy >= 0 }) { latest = fix }
+        if let fix = locations.last(where: { $0.horizontalAccuracy >= 0 }) {
+            latest = fix
+            Self.remember(fix)
+        }
         var points = track
         for fix in locations where fix.horizontalAccuracy >= 0 && abs(fix.timestamp.timeIntervalSinceNow) < 30 {
             if let last = points.last, fix.timestamp <= last.timestamp || fix.distance(from: last) < 5 { continue }
@@ -54,6 +57,20 @@ final class GPSTracker: NSObject, ObservableObject, CLLocationManagerDelegate {
             stop()
             status = "Location unavailable"
         }
+    }
+
+    /** The last GPS fix from any session, kept across launches; nil if there has never been one. */
+    static func lastKnown(_ defaults: UserDefaults = .standard) -> CLLocationCoordinate2D? {
+        guard defaults.object(forKey: "lastFixLatitude") != nil else { return nil }
+        let point = CLLocationCoordinate2D(latitude: defaults.double(forKey: "lastFixLatitude"),
+                                           longitude: defaults.double(forKey: "lastFixLongitude"))
+        return CLLocationCoordinate2DIsValid(point) ? point : nil
+    }
+
+    private static func remember(_ fix: CLLocation, _ defaults: UserDefaults = .standard) {
+        defaults.set(fix.coordinate.latitude, forKey: "lastFixLatitude")
+        defaults.set(fix.coordinate.longitude, forKey: "lastFixLongitude")
+        defaults.set(fix.timestamp.timeIntervalSince1970, forKey: "lastFixTime")
     }
 
     private func updateAuthorization() {

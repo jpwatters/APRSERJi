@@ -1,6 +1,6 @@
 # APRSERJi
 
-Native APRS station map and two-way messaging for iPhone, iPad, and Mac. Move the map to the area you want to monitor, enter your callsign, and select **Connect**. The feed uses a 100 km filter centered on the map when you connect.
+Native APRS station map and two-way messaging for iPhone, iPad, and Mac. Move the map to the area you want to monitor, enter your callsign, and select **Connect**. The feed receives stations within 500 miles of your current GPS fix, your last known GPS fix and the map center. If you move or pan more than 250 miles beyond those areas, the app reconnects with updated areas (at most every two minutes).
 
 The SwiftUI app uses OpenStreetMap-derived raster tiles and the same pinned Kotlin [aprs-core](https://github.com/kj4dxk/aprs-core) revision as APRSERJ64 on Windows and APRSERJa on Android. The core provides the APRS-IS session, packet decoding, and SQLite chat and outbox logic. See the [cross-platform audit and Apple architecture](docs/architecture.md) for the path to Android feature parity.
 

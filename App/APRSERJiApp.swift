@@ -44,17 +44,45 @@ private final class AprsModel: ObservableObject {
         }
     }
 
+    /** Each coverage area is a circle of this radius: 500 miles. */
+    static let rangeKm: Int32 = 805
+    private(set) var areas: [CLLocationCoordinate2D] = []
+    private var session: (account: String, passcode: String, host: String, port: Int32)?
+    private var lastAreaChange = Date.distantPast
+
     func connect(account: String, passcode: String, host: String, port: Int32,
-                 center: CLLocationCoordinate2D) -> Bool {
-        guard let core, core.start(callsign: account, passcode: passcode, host: host, port: port,
-                                   latitude: center.latitude, longitude: center.longitude) else { return false }
+                 areas: [CLLocationCoordinate2D]) -> Bool {
+        guard let core, !areas.isEmpty,
+              core.startAreas(callsign: account, passcode: passcode, host: host, port: port,
+                              areas: Self.encode(areas), radiusKm: Self.rangeKm) else { return false }
+        session = (account, passcode, host, port)
+        self.areas = areas
+        lastAreaChange = Date()
         status = "Connecting"
         running = true
         return true
     }
 
+    /**
+     * Reconnects with new areas when one of the wanted areas lies more than 250 miles from every area
+     * already covered, at most once every two minutes. The server filter is fixed at login.
+     */
+    func updateCoverage(_ wanted: [CLLocationCoordinate2D]) {
+        guard running, let session, Date().timeIntervalSince(lastAreaChange) >= 120 else { return }
+        let uncovered = wanted.contains { want in areas.allSatisfy { Geo.distance(want, $0) > 402_336 } }
+        guard uncovered else { return }
+        _ = connect(account: session.account, passcode: session.passcode, host: session.host,
+                    port: session.port, areas: wanted)
+    }
+
+    private static func encode(_ areas: [CLLocationCoordinate2D]) -> String {
+        areas.map { String(format: "%.4f,%.4f", $0.latitude, $0.longitude) }.joined(separator: ";")
+    }
+
     func disconnect() {
         core?.stop()
+        session = nil
+        areas = []
         running = false
         stations = []
         loginReply = nil
@@ -172,6 +200,7 @@ private struct StationMap: View {
                 while !Task.isCancelled {
                     handle(model.refresh())
                     BeaconSync.apply(core: core, gps: gps)
+                    model.updateCoverage(coverageAreas)
                     do {
                         try await Task.sleep(for: .seconds(1))
                     } catch {
@@ -237,6 +266,9 @@ private struct StationMap: View {
                     if model.running { model.disconnect() } else { connect() }
                 }
                 Text(model.status).accessibilityIdentifier("connectionStatus")
+                if model.running {
+                    Text(coverageText).font(.caption).foregroundStyle(.secondary)
+                }
                 Spacer()
                 if !enableSending && !model.running {
                     Text("Receive only").foregroundStyle(.secondary)
@@ -330,6 +362,27 @@ private struct StationMap: View {
         return (center, "map center")
     }
 
+    /**
+     * Where to receive stations: around the current GPS fix, the last known GPS fix and the map center.
+     * Points within 50 miles of one already listed are dropped, since their circles would nearly coincide.
+     */
+    private var coverageAreas: [CLLocationCoordinate2D] {
+        var result: [CLLocationCoordinate2D] = []
+        for point in [gps.latest?.coordinate, GPSTracker.lastKnown(), center].compactMap({ $0 })
+            where CLLocationCoordinate2DIsValid(point) && result.allSatisfy({ Geo.distance(point, $0) > 80_467 }) {
+            result.append(point)
+        }
+        return result
+    }
+
+    private var coverageText: String {
+        var names: [String] = []
+        if gps.latest != nil { names.append("GPS") } else if GPSTracker.lastKnown() != nil { names.append("last GPS fix") }
+        names.append("map center")
+        let count = model.areas.count
+        return "Receiving 500 mi around \(names.joined(separator: " and ")) · \(count) area\(count == 1 ? "" : "s")"
+    }
+
     private func openChat(with callsign: String) {
         recipient = callsign
         tab = 1
@@ -365,7 +418,7 @@ private struct StationMap: View {
               !enableSending || (!credential.isEmpty && credential != "-1"),
               model.connect(account: account, passcode: enableSending ? credential : "-1",
                             host: server.trimmingCharacters(in: .whitespacesAndNewlines),
-                            port: tcpPort, center: center) else {
+                            port: tcpPort, areas: coverageAreas) else {
             validationError = true
             return
         }
