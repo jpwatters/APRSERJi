@@ -4,9 +4,11 @@ Native APRS station map for iPhone, iPad, and Mac. The first milestone is a rece
 
 The SwiftUI app uses MapKit and links the Kotlin APRS engine also used by APRSERJ64 on Windows. APRSERJa is the standalone Android companion. The APRS-IS session, wire formats, and station cache come from the pinned [aprs-core](https://github.com/kj4dxk/aprs-core) submodule. See the [cross-platform audit and Apple architecture](docs/architecture.md) for the path to Android feature parity.
 
+[Windows · APRSERJ64](https://github.com/kj4dxk/APRSERJ64) · [Android · APRSERJa](https://github.com/kj4dxk/APRSERJa)
+
 ## Getting started
 
-APRSERJi is available as source code. This project does not currently offer an App Store download, a public TestFlight link, or a signed iPhone/iPad installer. You can build and run it directly from Xcode without going through the App Store. GitHub Actions builds the macOS app and the iOS Simulator target. A signed installation on a physical iPhone or iPad has yet to be verified.
+APRSERJi is available as source code. This project does not currently offer an App Store download, a public TestFlight link, or a signed iPhone/iPad installer. You can build and run it directly from Xcode without going through the App Store. The [Apple build workflow](https://github.com/kj4dxk/APRSERJi/actions/workflows/apple.yml) checks compilation for macOS, iOS Simulator, and the generic iOS device target. The device build runs without signing. Physical-device verification still requires a signed install followed by launching the app and confirming that stations appear on the map.
 
 ### Build on a Mac
 

@@ -25,3 +25,5 @@ jobs:
         run: xcodebuild -scheme APRSERJi-macOS -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build
       - name: Build iOS simulator
         run: xcodebuild -scheme APRSERJi-iOS -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
+      - name: Build for physical iPhone and iPad
+        run: xcodebuild -scheme APRSERJi-iOS -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
