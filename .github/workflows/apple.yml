@@ -1,0 +1,25 @@
+name: Apple build
+on: [push, pull_request]
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Build and test shared core
+        run: |
+          if [ "$(uname -m)" = arm64 ]; then target=macosArm64Test; else target=macosX64Test; fi
+          ./gradlew "$target" assembleAprsCoreReleaseXCFramework
+      - name: Generate Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+      - name: Build macOS
+        run: xcodebuild -scheme APRSISAPL-macOS -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build
+      - name: Build iOS simulator
+        run: xcodebuild -scheme APRSISAPL-iOS -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
