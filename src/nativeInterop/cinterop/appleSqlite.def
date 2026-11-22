@@ -1,0 +1,8 @@
+headers = sqlite3.h
+headerFilter = sqlite3.h
+package = org.aprserji.sqlite
+linkerOpts = -lsqlite3
+---
+static inline int aprs_bind_text(sqlite3_stmt *statement, int column, const char *text) {
+    return sqlite3_bind_text(statement, column, text, -1, SQLITE_TRANSIENT);
+}

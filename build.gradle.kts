@@ -11,6 +11,9 @@ check(core.file("build.gradle.kts").asFile.isFile) {
 kotlin {
     val framework = XCFramework("AprsCore")
     listOf(iosArm64(), iosSimulatorArm64(), iosX64(), macosArm64(), macosX64()).forEach { target ->
+        target.compilations.getByName("main").cinterops.create("appleSqlite") {
+            definitionFile.set(project.file("src/nativeInterop/cinterop/appleSqlite.def"))
+        }
         target.binaries.framework {
             baseName = "AprsCore"
             isStatic = true

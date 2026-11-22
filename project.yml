@@ -14,6 +14,7 @@ targets:
     platform: iOS
     sources: [App]
     dependencies:
+      - sdk: libsqlite3.tbd
       - framework: build/XCFrameworks/release/AprsCore.xcframework
         embed: false
     settings:
@@ -29,6 +30,7 @@ targets:
     platform: macOS
     sources: [App]
     dependencies:
+      - sdk: libsqlite3.tbd
       - framework: build/XCFrameworks/release/AprsCore.xcframework
         embed: false
     settings:
