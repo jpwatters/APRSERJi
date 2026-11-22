@@ -1,6 +1,6 @@
 import org.jetbrains.kotlin.gradle.plugin.mpp.apple.XCFramework
 
-plugins { kotlin("multiplatform") version "2.1.20" }
+plugins { kotlin("multiplatform") version "2.4.20" }
 repositories { mavenCentral() }
 
 val core = layout.projectDirectory.dir("shared/aprs-core")
@@ -29,6 +29,9 @@ kotlin {
         commonTest {
             kotlin.srcDir(core.dir("src/commonTest/kotlin"))
             dependencies { implementation(kotlin("test")) }
+        }
+        named("appleMain") {
+            kotlin.srcDir(core.dir("src/appleMain/kotlin"))
         }
     }
 }

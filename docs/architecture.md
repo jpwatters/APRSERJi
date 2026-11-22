@@ -4,8 +4,8 @@
 
 | Codebase | Revision | Current integration |
 |---|---|---|
-| [APRSIS64](https://github.com/kj4dxk/APRSIS64/tree/6286ce53ff2e79a04005aa53359c14d68dd05988) | `6286ce5` | Compose Desktop/JVM uses the core through Gradle project `:core`, pinned at `eeefa47`. |
-| [APRSISOSM standalone](https://github.com/kj4dxk/APRSISOSM/tree/a8d77e1) | `a8d77e1`, current Android release `2026.11.22.1047` | Android Java bridge and JavaScript map/chat in a WebView. Implements its own APRS client and offline OSM routing. |
+| [APRSERJ64](https://github.com/kj4dxk/APRSERJ64/tree/6286ce53ff2e79a04005aa53359c14d68dd05988) | `6286ce5` | Compose Desktop/JVM uses the core through Gradle project `:core`, pinned at `eeefa47`. |
+| [APRSERJa standalone](https://github.com/kj4dxk/APRSERJa/tree/a8d77e1) | `a8d77e1`, current Android release `2026.11.22.1047` | Android Java bridge and JavaScript map/chat in a WebView. Implements its own APRS client and offline OSM routing. |
 | [aprs-core main](https://github.com/kj4dxk/aprs-core/tree/fcea42b8428c94b8e58f3a53ac2f5f91cb23a9c2) | `fcea42b` | Kotlin sources under `commonMain`, with a JVM Gradle build. Same sources can be consumed by an Apple Kotlin Multiplatform build. |
 
 ### What to consolidate

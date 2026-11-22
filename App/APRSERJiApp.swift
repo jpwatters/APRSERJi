@@ -15,8 +15,8 @@ private struct StationMap: View {
     @AppStorage("callsign") private var callsign = ""
     @AppStorage("server") private var server = "rotate.aprs2.net"
     @AppStorage("port") private var port = "14580"
-    @State private var feed = StationFeed()
-    @State private var stations: [AprsStation] = []
+    @State private var feed = StationFeed(application: "APRSERJi")
+    @State private var stations: [StationMarker] = []
     @State private var status = "Disconnected"
     @State private var validationError = false
     @State private var running = false

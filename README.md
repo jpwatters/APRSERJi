@@ -6,7 +6,7 @@ The SwiftUI app uses MapKit and links the same Kotlin APRS engine as the other A
 
 ## Build on a Mac
 
-Use Xcode, JDK 17, and [XcodeGen](https://github.com/yonaskolb/XcodeGen). With Homebrew, install the generator with `brew install xcodegen`.
+Use Xcode 26.4, JDK 17, and [XcodeGen](https://github.com/yonaskolb/XcodeGen). With Homebrew, install the generator with `brew install xcodegen`.
 
 ```sh
 git clone --recurse-submodules https://github.com/kj4dxk/APRSERJi.git
