@@ -48,16 +48,19 @@ private final class AprsModel: ObservableObject {
     }
 
     private(set) var areas: [CoverageArea] = []
+    /** Watched callsigns in the current connection's buddy filter. */
+    private(set) var watch: [String] = []
     private var session: (account: String, passcode: String, host: String, port: Int32)?
     private var lastAreaChange = Date.distantPast
 
     func connect(account: String, passcode: String, host: String, port: Int32,
-                 areas: [CoverageArea]) -> Bool {
+                 areas: [CoverageArea], watch: [String]) -> Bool {
         guard let core, !areas.isEmpty,
               core.startAreas(callsign: account, passcode: passcode, host: host, port: port,
-                              areas: Self.encode(areas)) else { return false }
+                              areas: Self.encode(areas), extraFilter: WatchList.serverFilter(watch)) else { return false }
         session = (account, passcode, host, port)
         self.areas = areas
+        self.watch = watch
         lastAreaChange = Date()
         status = "Connecting"
         running = true
@@ -69,7 +72,7 @@ private final class AprsModel: ObservableObject {
      * more than half that area's radius away, or a larger radius wanted), at most once every two minutes.
      * [force] applies edited ranges at once. The server filter is fixed at login.
      */
-    func updateCoverage(_ wanted: [CoverageArea], force: Bool = false) {
+    func updateCoverage(_ wanted: [CoverageArea], watch wantedWatch: [String], force: Bool = false) {
         guard running, let session, !wanted.isEmpty else { return }
         if !force {
             guard Date().timeIntervalSince(lastAreaChange) >= 120 else { return }
@@ -82,7 +85,7 @@ private final class AprsModel: ObservableObject {
             guard uncovered else { return }
         }
         _ = connect(account: session.account, passcode: session.passcode, host: session.host,
-                    port: session.port, areas: wanted)
+                    port: session.port, areas: wanted, watch: wantedWatch)
     }
 
     private static func encode(_ areas: [CoverageArea]) -> String {
@@ -96,6 +99,7 @@ private final class AprsModel: ObservableObject {
         core?.stop()
         session = nil
         areas = []
+        watch = []
         running = false
         stations = []
         loginReply = nil
@@ -174,8 +178,15 @@ private struct StationMap: View {
     @AppStorage("rangeGPSMiles") private var rangeGPS = 500
     @AppStorage("rangeLastFixMiles") private var rangeLastFix = 500
     @AppStorage("rangeCenterMiles") private var rangeCenter = 500
-    @State private var showWeather = true
-    @State private var showObjects = true
+    @AppStorage("viewStations") private var viewStations = true
+    @AppStorage("viewWeather") private var viewWeather = true
+    @AppStorage("viewObjects") private var viewObjects = true
+    @AppStorage("viewMovingOnly") private var viewMovingOnly = false
+    @AppStorage("viewHideInfrastructure") private var viewHideInfrastructure = false
+    @AppStorage("viewSource") private var viewSource: ViewSource = .all
+    @AppStorage("viewMaxAgeMinutes") private var viewMaxAgeMinutes = 0
+    @AppStorage("viewMaxMiles") private var viewMaxMiles = 0
+    @AppStorage("viewWatchList") private var viewWatchList = ""
     @State private var unread = 0
     @AppStorage("notifyMessages") private var notify = true
     @ObservedObject private var notifier = MessageNotifier.shared
@@ -253,7 +264,7 @@ private struct StationMap: View {
                     TncSync.apply(core: core)
                     warnings.refreshIfNeeded(enabled: nwsEnabled, location: origin.coordinate,
                                              reachMeters: Double(max(rangeCenter, rangeGPS)) * 1609.344)
-                    model.updateCoverage(coverageAreas)
+                    model.updateCoverage(coverageAreas, watch: WatchList.parse(viewWatchList))
                     if let due = autoConnectAt, Date() >= due {
                         autoConnectAt = nil
                         if !model.running {
@@ -463,8 +474,6 @@ private struct StationMap: View {
                 }
                 .pickerStyle(.menu)
                 .fixedSize()
-                Toggle(isOn: $showWeather) { Label("Weather", systemImage: "cloud.sun") }
-                Toggle(isOn: $showObjects) { Label("Objects", systemImage: "flag") }
                 Menu {
                     Toggle("Paths of travel", isOn: $layerTracks)
                     Toggle("Dead reckoning", isOn: $layerDeadReckoning)
@@ -478,6 +487,9 @@ private struct StationMap: View {
             }
             .toggleStyle(.button)
             rangeSettings.padding(.horizontal, -16)
+            ViewSettingsRow(appliedWatch: model.watch, connected: model.running,
+                            onApplyWatch: { model.updateCoverage(coverageAreas, watch: WatchList.parse(viewWatchList), force: true) })
+                .padding(.horizontal, -16)
             if let status = gps.status {
                 Text(status).font(.caption).foregroundStyle(.secondary)
             }
@@ -496,6 +508,7 @@ private struct StationMap: View {
             layers.ringRadii = (1...max(1, ringCount)).map { Double($0) * ringSpacing * 1609.344 }
         }
         layers.alerts = nwsEnabled ? warnings.mapped : []
+        layers.watched = WatchList.parse(viewWatchList)
         return layers
     }
 
@@ -515,14 +528,18 @@ private struct StationMap: View {
                                       longitude: defaults.double(forKey: "mapLongitude"))
     }
 
+    /** The View settings, saved across restarts. */
+    private var viewFilter: ViewFilter {
+        ViewFilter(stations: viewStations, weather: viewWeather, objects: viewObjects, source: viewSource,
+                   maxAgeMinutes: viewMaxAgeMinutes, maxMiles: viewMaxMiles, movingOnly: viewMovingOnly,
+                   hideInfrastructure: viewHideInfrastructure, watched: WatchList.parse(viewWatchList))
+    }
+
     private var mapStations: [StationDetail] {
-        model.stations.filter { station in
-            switch station.kind {
-            case "weather": return showWeather
-            case "object", "item": return showObjects
-            default: return true
-            }
-        }
+        let filter = viewFilter
+        let here = origin.coordinate
+        let now = Date()
+        return model.stations.filter { filter.includes($0, origin: here, now: now) }
     }
 
     /** Distances in the station list are measured from your GPS fix, else the map center. */
@@ -574,7 +591,7 @@ private struct StationMap: View {
             RangeField(label: "Last fix", value: $rangeLastFix)
             RangeField(label: "Map center", value: $rangeCenter)
             if model.running {
-                Button("Apply") { model.updateCoverage(coverageAreas, force: true) }
+                Button("Apply") { model.updateCoverage(coverageAreas, watch: WatchList.parse(viewWatchList), force: true) }
                     .disabled(!rangesChanged)
             } else {
                 Text("Used when you connect").font(.caption).foregroundStyle(.secondary)
@@ -685,7 +702,7 @@ private struct StationMap: View {
               !enableSending || (!credential.isEmpty && credential != "-1"),
               model.connect(account: account, passcode: enableSending ? credential : "-1",
                             host: server.trimmingCharacters(in: .whitespacesAndNewlines),
-                            port: tcpPort, areas: coverageAreas) else {
+                            port: tcpPort, areas: coverageAreas, watch: WatchList.parse(viewWatchList)) else {
             validationError = true
             return
         }

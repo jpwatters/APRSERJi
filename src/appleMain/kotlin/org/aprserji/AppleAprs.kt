@@ -108,12 +108,16 @@ class AppleAprs @Throws(Exception::class) constructor(path: String, private val 
     /**
      * Connects with one range circle per area. [areas] is "lat,lon,radiusKm;…" (up to four areas, each
      * radius 1–2000 km). The core's single range filter stops at 500 km, so this sends the equivalent
-     * javAPRSSrvr r/ terms as a custom filter.
+     * javAPRSSrvr r/ terms as a custom filter. [extraFilter] adds more server filter terms, such as a buddy list
+     * ("b/CALL1/CALL2*") for stations to receive wherever they are; pass "" for none.
      */
-    fun startAreas(callsign: String, passcode: String, host: String, port: Int, areas: String): Boolean {
+    fun startAreas(callsign: String, passcode: String, host: String, port: Int, areas: String, extraFilter: String): Boolean {
         val points = parseAreas(areas) ?: return false
         if (points.isEmpty() || points.size > 4) return false
-        val filter = points.joinToString(" ") { "r/${coordinate(it.latitude)}/${coordinate(it.longitude)}/${it.radiusKm}" }
+        val extra = extraFilter.trim()
+        if (extra.length > 100 || extra.any { it.code !in 33..126 && it != ' ' }) return false
+        val filter = (points.map { "r/${coordinate(it.latitude)}/${coordinate(it.longitude)}/${it.radiusKm}" } +
+            listOf(extra).filter { it.isNotEmpty() }).joinToString(" ")
         val config = try {
             AprsIsConfig(callsign, passcode, host, port, points[0].latitude, points[0].longitude,
                 filterMode = "custom", customFilter = filter,

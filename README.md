@@ -19,7 +19,7 @@ Once the server verifies a passcode, the app saves it in the system Keychain (en
 ### Map
 
 - The map fills the window. A floating bar shows the connection status, the number of stations on the map, GPS and Follow buttons, and a settings button that opens the connection, tile, layer and range settings.
-- Station markers show the APRS symbol and are colored by kind: red stations, teal weather stations, orange objects and purple items. **Weather** and **Objects** hide those markers.
+- Station markers show the APRS symbol and are colored by kind: red stations, teal weather stations, orange objects, purple items and yellow watched stations. The **View** settings choose which stations appear.
 - Click a station for an information bubble: time heard, comment, weather or movement, owner, path (APRS-IS or RF), PHG coverage, distance and grid square from you, and **zoom**, **details**, **message** and **who-is** links.
 - **Layers**: paths of travel for other stations, dead reckoning (a dashed line to where a moving station should be now), PHG coverage circles, range rings around you, and NWS warning areas.
 - **Tiles** defaults to the maintainer's **pdeffenb** server; **OpenStreetMap** uses the public tiles. **Start GPS** plots your position and breadcrumb trail while the app is open.
@@ -27,6 +27,10 @@ Once the server verifies a passcode, the app saves it in the system Keychain (en
 ### Receive ranges
 
 The feed receives stations around your current GPS fix, your last known GPS fix (kept across launches) and the map center, each with its own **Range (mi)** (1–1000 miles, default 500). Select **Apply** to use new ranges while connected. Points within 50 miles share one circle with the larger range. If you move or pan more than half a range outside the covered areas, the app reconnects with updated areas, at most every two minutes. The engine keeps up to 2,000 stations.
+
+### View settings
+
+Under the ranges in the map's settings panel, **View** filters what the map shows: stations, weather stations, objects and items; moving stations only; hiding digipeaters and gateways; stations heard on APRS-IS or RF only; heard within a number of minutes; and within a distance of you. **Always show** takes up to six callsigns (end with `*` to match any SSID). They are added to the APRS-IS filter as a buddy list (`b/`), so their packets arrive even far outside your receive ranges; they bypass the View filters and are marked in yellow. All View settings are kept across restarts.
 
 ### Stations
 

@@ -62,6 +62,7 @@ struct MapFocus: Equatable {
 final class StationAnnotation: MKPointAnnotation {
     var kind = "station"
     var image = "mappin"
+    var watched = false
 }
 
 /** Everything drawn over the map besides station markers. */
@@ -74,6 +75,8 @@ struct MapLayers {
     var ringCenter: CLLocationCoordinate2D?
     var ringRadii: [Double] = []
     var alerts: [NWSAlert] = []
+    /** Watched callsign patterns, drawn in yellow and never hidden by MapKit's decluttering. */
+    var watched: [String] = []
 }
 
 #if os(macOS)
@@ -214,7 +217,9 @@ struct OSMMap: NativeMapRepresentable {
                 let point = CLLocationCoordinate2D(latitude: station.latitude, longitude: station.longitude)
                 let image = station.symbolInfo.image
                 let subtitle = Self.subtitle(for: station)
-                if let marker = markers[station.callsign], marker.kind == station.kind, marker.image == image {
+                let watched = WatchList.matches(station.callsign, parent.layers.watched)
+                if let marker = markers[station.callsign], marker.kind == station.kind, marker.image == image,
+                   marker.watched == watched {
                     if marker.coordinate.latitude != point.latitude || marker.coordinate.longitude != point.longitude {
                         marker.coordinate = point
                     }
@@ -227,6 +232,7 @@ struct OSMMap: NativeMapRepresentable {
                     marker.subtitle = subtitle
                     marker.kind = station.kind
                     marker.image = image
+                    marker.watched = watched
                     markers[station.callsign] = marker
                     map.addAnnotation(marker)
                 }
@@ -429,7 +435,9 @@ struct OSMMap: NativeMapRepresentable {
                 // The station bubble is drawn in SwiftUI, so MapKit's own callout stays off.
                 view.canShowCallout = false
                 view.glyphImage = makeGlyph(station.image)
-                switch station.kind {
+                view.displayPriority = station.watched ? .required : .defaultHigh
+                switch station.watched ? "watched" : station.kind {
+                case "watched": view.markerTintColor = .systemYellow
                 case "weather": view.markerTintColor = .systemTeal
                 case "object": view.markerTintColor = .systemOrange
                 case "item": view.markerTintColor = .systemPurple
