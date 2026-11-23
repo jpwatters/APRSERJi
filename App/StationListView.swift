@@ -29,6 +29,7 @@ struct StationListView: View {
     let connected: Bool
     let onMessage: (String) -> Void
     let onShowOnMap: (StationDetail) -> Void
+    let telemetry: [String: TelemetryReport]
     @AppStorage("useMetric") private var metric = false
     @AppStorage("stationSort") private var sort: StationSort = .distance
     @AppStorage("stationFilter") private var filter: StationFilter = .all
@@ -76,7 +77,8 @@ struct StationListView: View {
             }
             .navigationDestination(for: String.self) { callsign in
                 StationDetailView(callsign: callsign, stations: stations, origin: origin,
-                                  originLabel: originLabel, onMessage: onMessage, onShowOnMap: onShowOnMap)
+                                  originLabel: originLabel, onMessage: onMessage, onShowOnMap: onShowOnMap,
+                                  telemetry: telemetry[callsign])
             }
         }
     }
@@ -171,7 +173,9 @@ struct StationDetailView: View {
     let originLabel: String
     let onMessage: (String) -> Void
     let onShowOnMap: (StationDetail) -> Void
+    let telemetry: TelemetryReport?
     @AppStorage("useMetric") private var metric = false
+    @State private var showWhoIs = false
 
     var body: some View {
         if let station = stations.first(where: { $0.callsign == callsign }) {
@@ -183,6 +187,7 @@ struct StationDetailView: View {
                         motion(station)
                     }
                     if station.hasWeather { weather(station) }
+                    if let telemetry { telemetrySection(telemetry) }
                     info(station, now: context.date)
                 }
                 .formStyle(.grouped)
@@ -209,7 +214,9 @@ struct StationDetailView: View {
                     Button { onMessage(s.callsign) } label: { Label("Message", systemImage: "bubble.left") }
                 }
                 Button { onShowOnMap(s) } label: { Label("Show on map", systemImage: "map") }
+                Button { showWhoIs = true } label: { Label("WHO-IS", systemImage: "person.text.rectangle") }
             }
+            .sheet(isPresented: $showWhoIs) { WhoIsView(callsign: s.owner ?? s.callsign) }
             .buttonStyle(.bordered)
         }
     }
@@ -259,11 +266,36 @@ struct StationDetailView: View {
         }
     }
 
+    private func telemetrySection(_ t: TelemetryReport) -> some View {
+        Section(t.title.isEmpty ? "Telemetry" : "Telemetry · \(t.title)") {
+            ForEach(Array(t.channels.enumerated()), id: \.offset) { _, channel in
+                if let value = channel.value?.doubleValue ?? channel.raw?.doubleValue {
+                    LabeledContent(channel.name, value: "\(value.formatted(.number.precision(.fractionLength(0...3)))) \(channel.unit)")
+                }
+            }
+            let named = t.bits.filter { !$0.name.hasPrefix("B") || $0.name.count > 2 }
+            if !named.isEmpty {
+                ForEach(Array(named.enumerated()), id: \.offset) { _, bit in
+                    LabeledContent(bit.name) {
+                        Image(systemName: bit.active ? "checkmark.circle.fill" : "circle")
+                            .foregroundStyle(bit.active ? Color.green : Color.secondary)
+                    }
+                }
+            } else {
+                LabeledContent("Bits", value: t.bits.map { $0.set ? "1" : "0" }.joined())
+            }
+            LabeledContent("Sequence", value: "\(t.sequence) at \(Date(timeIntervalSince1970: Double(t.timeMillis) / 1000).formatted(date: .omitted, time: .shortened))")
+        }
+    }
+
     private func info(_ s: StationDetail, now: Date) -> some View {
         Section("Packets") {
             if let owner = s.owner { LabeledContent("Owner", value: owner) }
             LabeledContent("Last heard", value: "\(s.heardAt.formatted(date: .omitted, time: .standard)) (\(Units.age(s.heardAt, now: now)))")
-            LabeledContent("Packets heard", value: "\(s.packetCount)")
+            LabeledContent("Packets heard", value: "\(s.packetCount)" + (s.heardOnRadio ? " · last on RF" : ""))
+            if let coverage = s.coverageMeters?.doubleValue {
+                LabeledContent("Radio coverage (PHG)", value: Units.distance(coverage, metric: metric))
+            }
             if !s.path.isEmpty { LabeledContent("Path", value: s.path).textSelection(.enabled) }
             LabeledContent("Symbol", value: "\(s.symbolTable)\(s.symbol)")
         }

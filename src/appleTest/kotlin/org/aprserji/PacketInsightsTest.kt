@@ -62,4 +62,45 @@ class PacketInsightsTest {
         val insights = PacketInsights()
         assertNull(insights.receive("N0XYZ>APRS,TCPIP*::N0ABC    :Hi{1", null, 1))
     }
+
+    @Test
+    fun decodesTelemetryWithDefinitions() {
+        val insights = PacketInsights()
+        insights.receive("N0TLM>APRS,TCPIP*::N0TLM    :PARM.Volts,Temp,,,,Door", null, 1)
+        insights.receive("N0TLM>APRS,TCPIP*::N0TLM    :UNIT.V,degF", null, 2)
+        insights.receive("N0TLM>APRS,TCPIP*::N0TLM    :EQNS.0,0.1,0,0,1,0,0,1,0,0,1,0,0,1,0", null, 3)
+        insights.receive("N0TLM>APRS,TCPIP*:T#005,138,072,000,000,000,10000000", null, 4)
+        val report = insights.telemetry().getValue("N0TLM")
+        assertEquals("005", report.sequence)
+        assertEquals("Volts", report.channels[0].name)
+        assertEquals("V", report.channels[0].unit)
+        assertEquals(13.8, report.channels[0].value!!, 0.001)
+        assertEquals("Door", report.bits[0].name)
+        assertTrue(report.bits[0].set)
+    }
+
+    @Test
+    fun keepsBulletinsAndTracks() {
+        val insights = PacketInsights()
+        insights.receive("N0BLN>APRS,TCPIP*::BLN1     :Net tonight 7 PM on 146.94", null, 1)
+        assertEquals("Net tonight 7 PM on 146.94", insights.bulletins().single().text)
+
+        insights.receive("N0CAR>APRS,TCPIP*:!4123.45N/08812.34W>", null, 10)
+        insights.receive("N0CAR>APRS,TCPIP*:!4123.45N/08812.34W>", null, 20)
+        assertTrue(insights.tracks().isEmpty())
+        insights.receive("N0CAR>APRS,TCPIP*:!4124.45N/08812.34W>", null, 30)
+        assertEquals(2, insights.tracks().getValue("N0CAR").size)
+    }
+
+    @Test
+    fun reportsCoverageAndRadio() {
+        val store = AprsStationStore()
+        val insights = PacketInsights()
+        val line = "N0DIG>APRS,WIDE2-1:!4123.45N/08812.34W#PHG5360 Digi"
+        store.receive(line, 1)
+        insights.receive(line, null, 1, radio = true)
+        val detail = insights.details(store.snapshot(2), 2).single()
+        assertNotNull(detail.coverageMeters)
+        assertTrue(detail.heardOnRadio)
+    }
 }

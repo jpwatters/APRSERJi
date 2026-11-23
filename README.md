@@ -16,6 +16,16 @@ In **Map**, the **Tiles** picker defaults to the maintainer's **pdeffenb** serve
 
 **Beacon** sends your position over APRS-IS from GPS or a fixed position, with your choice of symbol, comment and interval, plus **Beacon now**. Beaconing needs a verified login (**Enable sending** and your passcode) and runs only while the app is open. New messages raise a notification and a badge on **Messages**; tap the notification to open the conversation. **Metric units** and message notifications are under **Beacon → Display & alerts**.
 
+Features inspired by KJ4ERJ's [APRSISCE/32](https://aprsisce.wikidot.com/start):
+
+- **GeniusBeaconing** (Setup ▸ Report ▸ Timing): beacons when your position strays from where your last beacon's course and speed predicted, after a set distance or heading change, within minimum and maximum intervals. Beacons carry course, speed and altitude from GPS.
+- **Software modems** (Setup ▸ Radio): connect to Dire Wolf, UZ7HO Sound Modem or AGWPE over KISS-TCP or AGWPE. Stations heard on RF join the map and lists, beacons can also go out on RF with your chosen path, and the optional IGate gates RF packets to APRS-IS.
+- **Bulletins** tab: APRS bulletins (BLN…, NWS-…), ANSRVR announcement groups (join, leave, send a CQ, read announcements), and NWS alerts for your location.
+- **Telemetry**: station details show telemetry channels with PARM names, UNITs and EQNS scaling, and named BITS.
+- **Map layers** (map ▸ Layers, or Setup ▸ Map layers): paths of travel for other stations, dead reckoning for moving stations, PHG coverage circles, range rings, and NWS warning polygons from api.weather.gov.
+- **Offline maps** (Setup ▸ Offline maps): every tile viewed is cached and used when offline; the visible area can be downloaded ahead of time from the pdeffenb server (the OpenStreetMap tile policy forbids bulk downloads).
+- **WHO-IS**: look up a station's license holder via callook.info, then HamDB, then an optional downloaded copy of the FCC amateur license database (Setup ▸ Callsign lookup), with links to QRZ.com and aprs.fi.
+
 APRSERJi is available as source code. This project does not currently offer an App Store download, a public TestFlight link, or a signed iPhone/iPad installer. You can build and run it directly from Xcode without going through the App Store. The [Apple build workflow](https://github.com/kj4dxk/APRSERJi/actions/workflows/apple.yml) checks compilation for macOS, iOS Simulator, and the generic iOS device target. The device build runs without signing. Physical-device verification still requires a signed install followed by launching the app and confirming that stations appear on the map.
 
 ### Build on a Mac

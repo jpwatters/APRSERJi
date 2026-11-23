@@ -28,6 +28,9 @@ private final class AprsModel: ObservableObject {
     @Published private(set) var revision: Int64 = 0
     @Published private(set) var chatError: String?
     @Published private(set) var loginReply: String?
+    @Published private(set) var tracks: [String: [TrackPoint]] = [:]
+    @Published private(set) var telemetry: [String: TelemetryReport] = [:]
+    @Published private(set) var bulletins: [AprsBulletin] = []
 
     init() {
         do {
@@ -106,10 +109,17 @@ private final class AprsModel: ObservableObject {
         guard let core else { return [] }
         if revision != core.revision { revision = core.revision }
         if chatError != core.chatError { chatError = core.chatError }
-        guard running else { return [] }
-        if loginReply != core.loginReply { loginReply = core.loginReply }
+        // Stations heard on the radio arrive even without an APRS-IS connection.
         let snapshot = core.stationDetails
         if stations != snapshot { stations = snapshot }
+        let nextTracks = core.stationTracks
+        if tracks != nextTracks { tracks = nextTracks }
+        let nextTelemetry = core.telemetryReports
+        if telemetry != nextTelemetry { telemetry = nextTelemetry }
+        let nextBulletins = core.bulletins
+        if bulletins != nextBulletins { bulletins = nextBulletins }
+        guard running else { return [] }
+        if loginReply != core.loginReply { loginReply = core.loginReply }
         let nextStatus: String
         switch core.connectionState {
         case "VERIFIED": nextStatus = "Verified"
@@ -147,6 +157,15 @@ private struct StationMap: View {
     @State private var stationPath: [String] = []
     @State private var showMapControls = false
     @State private var calloutPoint: CGPoint?
+    @State private var whoIsCallsign: String?
+    @ObservedObject private var warnings = NWSWarnings.shared
+    @AppStorage("layerTracks") private var layerTracks = true
+    @AppStorage("layerCoverage") private var layerCoverage = false
+    @AppStorage("layerDeadReckoning") private var layerDeadReckoning = true
+    @AppStorage("layerRings") private var layerRings = false
+    @AppStorage("ringSpacingMiles") private var ringSpacing = 10.0
+    @AppStorage("ringCount") private var ringCount = 4
+    @AppStorage("nwsEnabled") private var nwsEnabled = true
     /** Set at launch when a verified passcode is saved; the app connects on its own at this time. */
     @State private var autoConnectAt: Date?
     /** Seconds left when the countdown was paused; nil while it runs or when there is none. */
@@ -179,6 +198,7 @@ private struct StationMap: View {
                                         selectedStation = station.callsign
                                         tab = 0
                                     },
+                                    telemetry: model.telemetry,
                                     path: $stationPath)
                         .tabItem { Label("Stations", systemImage: "list.bullet") }
                         .tag(2)
@@ -187,8 +207,13 @@ private struct StationMap: View {
                         .tabItem { Label("Messages", systemImage: "bubble.left.and.bubble.right") }
                         .badge(unread)
                         .tag(1)
-                    BeaconView(core: core, connected: model.running, mapCenter: center, gps: gps)
-                        .tabItem { Label("Beacon", systemImage: "dot.radiowaves.up.forward") }
+                    BulletinsView(core: core, account: normalizedCallsign(callsign), bulletins: model.bulletins,
+                                  revision: model.revision, warnings: warnings)
+                        .tabItem { Label("Bulletins", systemImage: "megaphone") }
+                        .badge(warnings.atLocation.count)
+                        .tag(4)
+                    SetupView(core: core, mapCenter: center, gps: gps)
+                        .tabItem { Label("Setup", systemImage: "gearshape") }
                         .tag(3)
                 }
             }
@@ -224,6 +249,9 @@ private struct StationMap: View {
                 while !Task.isCancelled {
                     handle(model.refresh())
                     BeaconSync.apply(core: core, gps: gps)
+                    TncSync.apply(core: core)
+                    warnings.refreshIfNeeded(enabled: nwsEnabled, location: origin.coordinate,
+                                             reachMeters: Double(max(rangeCenter, rangeGPS)) * 1609.344)
                     model.updateCoverage(coverageAreas)
                     if let due = autoConnectAt, Date() >= due {
                         autoConnectAt = nil
@@ -323,7 +351,7 @@ private struct StationMap: View {
 
     private var stationMap: some View {
         OSMMap(preset: tilePreset, stations: mapStations, track: gps.track,
-               follow: gps.tracking && followGPS, focus: focus,
+               follow: gps.tracking && followGPS, focus: focus, layers: mapLayers,
                origin: origin.coordinate, originLabel: origin.label,
                onDetails: { callsign in
                    stationPath = [callsign]
@@ -340,6 +368,9 @@ private struct StationMap: View {
                     .padding(6)
             }
             .overlay(alignment: .top) { mapOverlay }
+            .sheet(isPresented: Binding(get: { whoIsCallsign != nil }, set: { if !$0 { whoIsCallsign = nil } })) {
+                WhoIsView(callsign: whoIsCallsign ?? "")
+            }
         // Station details, zoom and messaging live in the map's station bubble.
     }
 
@@ -363,6 +394,7 @@ private struct StationMap: View {
                             tab = 2
                         },
                         onMessage: { openChat(with: callsign) },
+                        onWhoIs: { whoIsCallsign = station.owner ?? callsign },
                         onClose: { selectedStation = nil })
                 }
                 .fixedSize()
@@ -431,6 +463,16 @@ private struct StationMap: View {
                 .fixedSize()
                 Toggle(isOn: $showWeather) { Label("Weather", systemImage: "cloud.sun") }
                 Toggle(isOn: $showObjects) { Label("Objects", systemImage: "flag") }
+                Menu {
+                    Toggle("Paths of travel", isOn: $layerTracks)
+                    Toggle("Dead reckoning", isOn: $layerDeadReckoning)
+                    Toggle("PHG coverage", isOn: $layerCoverage)
+                    Toggle("Range rings", isOn: $layerRings)
+                    Toggle("NWS warnings", isOn: $nwsEnabled)
+                } label: {
+                    Label("Layers", systemImage: "square.3.layers.3d")
+                }
+                .fixedSize()
             }
             .toggleStyle(.button)
             rangeSettings.padding(.horizontal, -16)
@@ -438,6 +480,21 @@ private struct StationMap: View {
                 Text(status).font(.caption).foregroundStyle(.secondary)
             }
         }
+    }
+
+    /** Tracks, coverage, dead reckoning, range rings and NWS polygons for the map. */
+    private var mapLayers: MapLayers {
+        var layers = MapLayers()
+        layers.tracks = model.tracks
+        layers.showTracks = layerTracks
+        layers.showCoverage = layerCoverage
+        layers.showDeadReckoning = layerDeadReckoning
+        if layerRings {
+            layers.ringCenter = origin.coordinate
+            layers.ringRadii = (1...max(1, ringCount)).map { Double($0) * ringSpacing * 1609.344 }
+        }
+        layers.alerts = nwsEnabled ? warnings.mapped : []
+        return layers
     }
 
     private var statusColor: Color {

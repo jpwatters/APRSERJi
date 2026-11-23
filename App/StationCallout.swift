@@ -10,6 +10,7 @@ struct StationCallout: View {
     let onZoom: () -> Void
     let onDetails: () -> Void
     let onMessage: () -> Void
+    let onWhoIs: () -> Void
     let onClose: () -> Void
 
     private var metric: Bool { UserDefaults.standard.bool(forKey: "useMetric") }
@@ -43,8 +44,14 @@ struct StationCallout: View {
                 if let owner = station.owner {
                     Text("Owner \(owner)").font(.caption)
                 }
+                if let coverage = station.coverageMeters?.doubleValue {
+                    Text("PHG coverage \(Units.distance(coverage, metric: metric))").font(.caption)
+                }
+                if station.hasTelemetry {
+                    Text("Telemetry available in details").font(.caption).foregroundStyle(.secondary)
+                }
                 if !station.path.isEmpty {
-                    Text("[APRS via \(station.path)]").font(.caption2).foregroundStyle(.secondary)
+                    Text("[\(station.heardOnRadio ? "RF" : "APRS") via \(station.path)]").font(.caption2).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Text("\(Units.distance(Geo.distance(origin, station.coordinate), metric: metric)) \(Units.compass(Geo.bearing(from: origin, to: station.coordinate))) of \(originLabel) · \(Geo.grid(station.coordinate))")
@@ -57,6 +64,8 @@ struct StationCallout: View {
                         Text("·").foregroundStyle(.secondary)
                         Button("message", action: onMessage)
                     }
+                    Text("·").foregroundStyle(.secondary)
+                    Button("who-is", action: onWhoIs)
                 }
                 .buttonStyle(.borderless)
                 .foregroundStyle(Color.accentColor)
