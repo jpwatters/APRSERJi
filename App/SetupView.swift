@@ -49,6 +49,7 @@ struct SetupView: View {
                         .onChange(of: notify) { _, on in if on { MessageNotifier.shared.requestAuthorization() } }
                     #if os(macOS)
                     Button("Reset window size") { MainWindow.resetSize() }
+                        .help("Return the window to its normal size, centered — or press ⌥⌘0 (Window ▸ Reset Window Size) anytime.")
                     #endif
                 }
             }

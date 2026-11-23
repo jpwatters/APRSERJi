@@ -440,6 +440,7 @@ private struct StationMap: View {
             HStack(spacing: 10) {
                 Circle().fill(statusColor).frame(width: 9, height: 9)
                 Text(model.status).font(.callout.bold())
+                    .help("Connection status" + Self.resetHint)
                 Text("· \(mapStations.count) on map").font(.callout).foregroundStyle(.secondary)
                 Spacer(minLength: 8)
                 Button { if gps.tracking { gps.stop() } else { gps.start() } } label: {
@@ -454,7 +455,7 @@ private struct StationMap: View {
                 Button { withAnimation(.snappy) { showMapControls.toggle() } } label: {
                     Image(systemName: showMapControls ? "chevron.up" : "slider.horizontal.3")
                 }
-                .help(showMapControls ? "Hide settings" : "Connection and map settings")
+                .help(showMapControls ? "Hide settings" : "Connection and map settings" + Self.resetHint)
             }
             .buttonStyle(.borderless)
             if !showMapControls { autoConnectNotice }
@@ -521,6 +522,15 @@ private struct StationMap: View {
         layers.alerts = nwsEnabled ? warnings.mapped : []
         layers.watched = WatchList.parse(viewWatchList)
         return layers
+    }
+
+    /** Hover reminder of the Mac's reset-window shortcut. */
+    private static var resetHint: String {
+        #if os(macOS)
+        return " · Reset window size: ⌥⌘0"
+        #else
+        return ""
+        #endif
     }
 
     private var statusColor: Color {
