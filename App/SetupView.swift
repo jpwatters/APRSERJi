@@ -47,6 +47,9 @@ struct SetupView: View {
                     Toggle("Metric units", isOn: $metric)
                     Toggle("Notify me of new messages", isOn: $notify)
                         .onChange(of: notify) { _, on in if on { MessageNotifier.shared.requestAuthorization() } }
+                    #if os(macOS)
+                    Button("Reset window size") { MainWindow.resetSize() }
+                    #endif
                 }
             }
             .formStyle(.grouped)

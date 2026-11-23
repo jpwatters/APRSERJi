@@ -15,7 +15,18 @@ struct APRSERJiApp: App {
     var body: some Scene {
         WindowGroup {
             StationMap(model: model)
+                #if os(macOS)
+                .background(WindowAccessor())
+                #endif
         }
+        #if os(macOS)
+        .commands {
+            CommandGroup(after: .windowSize) {
+                Button("Reset Window Size") { MainWindow.resetSize() }
+                    .keyboardShortcut("0", modifiers: [.command, .option])
+            }
+        }
+        #endif
     }
 }
 

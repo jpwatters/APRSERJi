@@ -48,7 +48,7 @@ NWS alerts for your location (from api.weather.gov), APRS bulletins (BLN…, NWS
 
 - **Beacon**: GPS or fixed position, symbol, comment (43 characters) and timing. **Fixed interval** beacons every 1–60 minutes. **GeniusBeaconing** beacons when your position strays from where your last beacon's course and speed predicted, after a distance traveled or a heading change, within minimum and maximum intervals. Beacons carry course, speed and altitude from GPS, go out over a verified APRS-IS login and, with **Also send on RF**, through the software modem with your chosen path. GPS starts automatically when beaconing from GPS.
 - **Radio**: connect to Dire Wolf, UZ7HO Sound Modem or AGWPE over KISS-TCP or AGWPE. Stations heard on RF join the map and lists even without APRS-IS. The optional **IGate** gates RF packets to APRS-IS while the login is verified.
-- **Map layers**, **Offline maps** and **Callsign lookup** (below), and **Display & alerts**: metric units and message notifications.
+- **Map layers**, **Offline maps** and **Callsign lookup** (below), and **Display & alerts**: metric units, message notifications and, on the Mac, **Reset window size**. The Mac window keeps its size and position across restarts; **Window ▸ Reset Window Size** (⌥⌘0) returns it to its normal size.
 
 ### Offline maps
 
