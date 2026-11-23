@@ -24,6 +24,7 @@ targets:
             pdeffenb.homeip.net:
               NSExceptionAllowsInsecureHTTPLoads: true
         UILaunchScreen: {}
+        NSLocalNetworkUsageDescription: APRSERJi connects to software modems such as Dire Wolf and UZ7HO on your local network.
     sources: [App]
     dependencies:
       - sdk: libsqlite3.tbd
