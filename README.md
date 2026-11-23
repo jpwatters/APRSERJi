@@ -30,7 +30,7 @@ The feed receives stations around your current GPS fix, your last known GPS fix 
 
 ### View settings
 
-Under the ranges in the map's settings panel, **View** filters what the map shows: stations, weather stations, objects and items; moving stations only; hiding digipeaters and gateways; stations heard on APRS-IS or RF only; heard within a number of minutes; and within a distance of you. **Always show** takes up to six callsigns (end with `*` to match any SSID). They are added to the APRS-IS filter as a buddy list (`b/`), so their packets arrive even far outside your receive ranges; they bypass the View filters and are marked in yellow. All View settings are kept across restarts.
+Under the ranges in the map's settings panel, **View** filters what the map shows: stations, weather stations, objects and items; moving stations only; hiding digipeaters and gateways; stations heard on APRS-IS or RF only; heard within a number of minutes; and within a distance of you. **Always show** takes up to twelve callsigns, such as `KJ4DXK*, KC9KKO*, W9ABC-9` (end with `*` to match any SSID); the field scrolls with the arrow keys. They are added to the APRS-IS filter as a buddy list (`b/`), so their packets arrive even far outside your receive ranges; they bypass the View filters and are marked in yellow. All View settings are kept across restarts.
 
 ### Stations
 
@@ -80,7 +80,7 @@ xcodegen generate
 open APRSERJi.xcodeproj
 ```
 
-Run `xcodegen generate` again after adding files, and the Gradle step after changing Kotlin code. To pick up KJ4DXK's changes: `git remote add upstream https://github.com/kj4dxk/APRSERJi.git`, then `git fetch upstream && git merge upstream/main && git submodule update --init --recursive`.
+Run `xcodegen generate` again after adding files, and the Gradle step after changing Kotlin code. The build compiles aprs-core from a copy in `build/patched-core` with the APRS-IS filter limit raised from 160 to 440 characters (see `corePatches` in `build.gradle.kts`); the submodule is not modified. To pick up KJ4DXK's changes: `git remote add upstream https://github.com/kj4dxk/APRSERJi.git`, then `git fetch upstream && git merge upstream/main && git submodule update --init --recursive`.
 
 **Signing.** `project.yml` signs with team `7Q943H255L` and bundle ID `com.kc9kko.APRSERJi`, and gives the Mac app a `keychain-access-groups` entitlement so the saved passcode is never re-prompted. To build under your own Apple developer account, change `DEVELOPMENT_TEAM` and both `PRODUCT_BUNDLE_IDENTIFIER` values (and the entitlement's bundle ID) in `project.yml`, then run `xcodegen generate`.
 

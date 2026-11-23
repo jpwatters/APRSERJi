@@ -115,7 +115,7 @@ class AppleAprs @Throws(Exception::class) constructor(path: String, private val 
         val points = parseAreas(areas) ?: return false
         if (points.isEmpty() || points.size > 4) return false
         val extra = extraFilter.trim()
-        if (extra.length > 100 || extra.any { it.code !in 33..126 && it != ' ' }) return false
+        if (extra.length > 200 || extra.any { it.code !in 33..126 && it != ' ' }) return false
         val filter = (points.map { "r/${coordinate(it.latitude)}/${coordinate(it.longitude)}/${it.radiusKm}" } +
             listOf(extra).filter { it.isNotEmpty() }).joinToString(" ")
         val config = try {

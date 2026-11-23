@@ -13,7 +13,7 @@ enum ViewSource: String, CaseIterable, Identifiable {
  * SSID or suffix, e.g. KC9KKO* or W9*.
  */
 enum WatchList {
-    static let maximum = 6
+    static let maximum = 12
 
     static func parse(_ text: String) -> [String] {
         let calls = text.uppercased()
@@ -122,8 +122,11 @@ struct ViewSettingsRow: View {
             }
             HStack(spacing: 6) {
                 Text("Always show").font(.caption)
-                TextField("Callsigns, e.g. W9ABC-9, KC9KKO*", text: $draft)
+                // One line that scrolls sideways: the arrow keys (and Home/End) move through text that doesn't fit.
+                TextField("Callsigns, e.g. KJ4DXK*, KC9KKO*, W9ABC-9", text: $draft)
                     .textFieldStyle(.roundedBorder)
+                    .lineLimit(1)
+                    .frame(minWidth: 220, maxWidth: .infinity)
                     .onSubmit(save)
                 Button(connected ? "Apply" : "Save") {
                     save()
