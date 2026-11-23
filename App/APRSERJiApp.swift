@@ -221,6 +221,7 @@ private struct StationMap: View {
                 if notify { MessageNotifier.shared.requestAuthorization() }
             }
             .onAppear {
+                startBeaconGPSIfNeeded()
                 refreshSavedPasscode()
                 scheduleAutoConnect()
             }
@@ -269,6 +270,7 @@ private struct StationMap: View {
             }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .background { gps.stop() }
+                if phase == .active { startBeaconGPSIfNeeded() }
                 if phase == .active && tab == 1 { clearUnread() }
             }
             .alert("Check connection settings", isPresented: $validationError) {
@@ -658,6 +660,16 @@ private struct StationMap: View {
     private func cancelAutoConnect() {
         autoConnectAt = nil
         autoConnectPaused = nil
+    }
+
+    /**
+     * Beaconing from GPS needs GPS running. The beacon setting survives restarts, so start GPS at launch and on
+     * returning to the foreground instead of only when the switch is turned on.
+     */
+    private func startBeaconGPSIfNeeded() {
+        let defaults = UserDefaults.standard
+        let source = BeaconSource(rawValue: defaults.string(forKey: "beaconSource") ?? "") ?? .gps
+        if defaults.bool(forKey: "beaconEnabled"), source == .gps, !gps.tracking { gps.start() }
     }
 
     private func refreshSavedPasscode() {

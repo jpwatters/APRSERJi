@@ -113,6 +113,9 @@ struct BeaconSections: View {
         .onChange(of: enabled) { _, on in
             if on && source == .gps && !gps.tracking { gps.start() }
         }
+        .onChange(of: source) { _, newSource in
+            if enabled && newSource == .gps && !gps.tracking { gps.start() }
+        }
 
         Section("Position") {
             Picker("Source", selection: $source) {
