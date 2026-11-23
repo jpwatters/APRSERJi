@@ -5,22 +5,34 @@ import SwiftUI
 /**
  * Keeps the Mac window's size and position across restarts (AppKit frame autosave), and remembers the size the
  * window first opened at so Reset Window Size can return to it.
+ *
+ * SwiftUI sizes and places a new window itself just after creating it, so the saved frame is applied a moment
+ * later, once SwiftUI has finished, and the autosave name is set only then — SwiftUI's initial small frame is
+ * never written over the saved one.
  */
 enum MainWindow {
     static let autosaveName = "APRSERJiMainWindow"
     private static let defaultSizeKey = "defaultWindowSize"
     private static weak var window: NSWindow?
+    private static var closeObserver: NSObjectProtocol?
 
     static func attach(_ window: NSWindow) {
         guard self.window !== window else { return }
         self.window = window
-        let defaults = UserDefaults.standard
-        // The first time the app runs with this feature, the window is at its normal size: remember it.
-        if defaults.string(forKey: defaultSizeKey) == nil {
-            defaults.set(NSStringFromSize(window.frame.size), forKey: defaultSizeKey)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            let defaults = UserDefaults.standard
+            // The first time this runs, the window is at SwiftUI's normal size: remember it for Reset.
+            if defaults.string(forKey: defaultSizeKey) == nil {
+                defaults.set(NSStringFromSize(window.frame.size), forKey: defaultSizeKey)
+            }
+            window.setFrameUsingName(autosaveName)
+            window.setFrameAutosaveName(autosaveName)
         }
-        window.setFrameUsingName(autosaveName)
-        window.setFrameAutosaveName(autosaveName)
+        // Belt and braces: save once more as the window closes or the app quits.
+        closeObserver = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window,
+                                                               queue: .main) { _ in
+            window.saveFrame(usingName: autosaveName)
+        }
     }
 
     /** Back to the normal size, centered on the window's screen. */
@@ -36,16 +48,32 @@ enum MainWindow {
     }
 }
 
-/** Finds the hosting NSWindow once the view is on screen. */
+/** Reports the hosting NSWindow as soon as the view is placed in it. */
 struct WindowAccessor: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        DispatchQueue.main.async { if let window = view.window { MainWindow.attach(window) } }
-        return view
+    final class Probe: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let window { MainWindow.attach(window) }
+        }
     }
 
-    func updateNSView(_ view: NSView, context: Context) {
-        if let window = view.window { MainWindow.attach(window) }
+    func makeNSView(context: Context) -> Probe { Probe() }
+    func updateNSView(_ view: Probe, context: Context) {}
+}
+
+/** Saves the window frame when the app quits with ⌘Q, before windows are torn down. */
+final class AppQuitSaver: NSObject {
+    static let shared = AppQuitSaver()
+    private var observer: NSObjectProtocol?
+
+    func install() {
+        guard observer == nil else { return }
+        observer = NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil,
+                                                          queue: .main) { _ in
+            for window in NSApp.windows where window.frameAutosaveName == MainWindow.autosaveName {
+                window.saveFrame(usingName: MainWindow.autosaveName)
+            }
+        }
     }
 }
 #endif

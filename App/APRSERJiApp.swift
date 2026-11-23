@@ -10,6 +10,9 @@ struct APRSERJiApp: App {
     init() {
         // Become the notification delegate before any notification tap is delivered.
         _ = MessageNotifier.shared
+        #if os(macOS)
+        AppQuitSaver.shared.install()
+        #endif
     }
 
     var body: some Scene {
