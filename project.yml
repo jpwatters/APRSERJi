@@ -6,8 +6,8 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "0.1.0"
-    CURRENT_PROJECT_VERSION: "1"
+    MARKETING_VERSION: "0.2.0"
+    CURRENT_PROJECT_VERSION: "2"
     # Stable signing with KC9KKO's team keeps Keychain access approved between builds.
     DEVELOPMENT_TEAM: 7Q943H255L
     CODE_SIGN_STYLE: Automatic
@@ -18,6 +18,8 @@ targets:
     info:
       path: build/iOS-Info.plist
       properties:
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         NSLocationWhenInUseUsageDescription: &locationUsage APRSERJi uses your location to show and follow your GPS track while the app is open.
         NSAppTransportSecurity: &tileTransport
           NSExceptionDomains:
@@ -48,6 +50,8 @@ targets:
     info:
       path: build/macOS-Info.plist
       properties:
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         NSLocationWhenInUseUsageDescription: *locationUsage
         NSLocationUsageDescription: *locationUsage
         NSAppTransportSecurity: *tileTransport
