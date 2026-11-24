@@ -62,6 +62,34 @@ enum TileCache {
 
     static func clear() { try? FileManager.default.removeItem(at: root) }
 
+    /** Deletes the least recently used tiles until the cache fits [maxBytes]. Returns how many were removed. */
+    @discardableResult
+    static func prune(maxBytes: Int64) -> Int {
+        guard maxBytes > 0, let walker = FileManager.default.enumerator(
+            at: root, includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey]) else { return 0 }
+        var files: [(url: URL, size: Int64, date: Date)] = []
+        var total: Int64 = 0
+        for case let url as URL in walker where url.pathExtension == "png" {
+            let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+            let size = Int64(values?.fileSize ?? 0)
+            files.append((url, size, values?.contentModificationDate ?? .distantPast))
+            total += size
+        }
+        guard total > maxBytes else { return 0 }
+        var removed = 0
+        for file in files.sorted(by: { $0.date < $1.date }) where total > maxBytes {
+            try? FileManager.default.removeItem(at: file.url)
+            total -= file.size
+            removed += 1
+        }
+        return removed
+    }
+
+    /** The cache size limit from Setup, in bytes (0 for no limit). */
+    static var budgetBytes: Int64 {
+        Int64(UserDefaults.standard.object(forKey: "tileBudgetMB") as? Int ?? 1024) * 1_048_576
+    }
+
     /** Slippy-map tile numbers covering a region at one zoom level. */
     static func tiles(in region: MKCoordinateRegion, zoom z: Int) -> [(x: Int, y: Int)] {
         let n = Double(1 << z)
@@ -166,6 +194,7 @@ struct OfflineMapsSection: View {
     @ObservedObject private var loader = TilePreloader.shared
     @AppStorage("tilePreset") private var tilePreset: TilePreset = .project
     @State private var extraLevels = 3
+    @AppStorage("tileBudgetMB") private var budget = 1024
 
     var body: some View {
         Section {
@@ -192,6 +221,18 @@ struct OfflineMapsSection: View {
                 if count > TilePreloader.maximumTiles {
                     Text("That is more than \(TilePreloader.maximumTiles.formatted()) tiles. Zoom the map in or choose fewer levels.")
                         .font(.caption).foregroundStyle(.orange)
+                }
+            }
+            Picker("Keep at most", selection: $budget) {
+                ForEach([250, 500, 1024, 2048, 5120, 0], id: \.self) { mb in
+                    Text(mb == 0 ? "No limit" : mb >= 1024 ? "\(mb / 1024) GB" : "\(mb) MB").tag(mb)
+                }
+            }
+            .onChange(of: budget) { _, _ in
+                DispatchQueue.global(qos: .utility).async {
+                    TileCache.prune(maxBytes: TileCache.budgetBytes)
+                    let usage = TileCache.usage()
+                    DispatchQueue.main.async { loader.usage = usage }
                 }
             }
             Button("Clear map cache", role: .destructive) { loader.clear() }

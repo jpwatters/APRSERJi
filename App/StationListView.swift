@@ -175,7 +175,10 @@ struct StationDetailView: View {
     let onShowOnMap: (StationDetail) -> Void
     let telemetry: TelemetryReport?
     @AppStorage("useMetric") private var metric = false
+    @AppStorage("nicknames") private var nicknameStore = ""
+    @AppStorage("pathStations") private var pathStore = ""
     @State private var showWhoIs = false
+    @State private var nickname = ""
 
     var body: some View {
         if let station = stations.first(where: { $0.callsign == callsign }) {
@@ -209,12 +212,25 @@ struct StationDetailView: View {
                 }
             }
             if !s.comment.isEmpty { Text(s.comment).textSelection(.enabled) }
+            if let status = s.statusText { Label(status, systemImage: "text.bubble").textSelection(.enabled) }
+            HStack {
+                TextField("Nickname (shown on the map)", text: $nickname)
+                    .onSubmit { saveNickname(s.callsign) }
+                Button("Save") { saveNickname(s.callsign) }
+            }
+            .onAppear { nickname = Nicknames.load(nicknameStore)[s.callsign] ?? "" }
             HStack {
                 if s.canMessage {
                     Button { onMessage(s.callsign) } label: { Label("Message", systemImage: "bubble.left") }
                 }
                 Button { onShowOnMap(s) } label: { Label("Show on map", systemImage: "map") }
                 Button { showWhoIs = true } label: { Label("WHO-IS", systemImage: "person.text.rectangle") }
+                if !s.pathNodes.isEmpty {
+                    let showing = pathStore.split(separator: ",").map(String.init).contains(s.callsign)
+                    Button { togglePath(s.callsign) } label: {
+                        Label(showing ? "Hide path" : "Show path", systemImage: "point.topleft.down.to.point.bottomright.curvepath")
+                    }
+                }
             }
             .sheet(isPresented: $showWhoIs) { WhoIsView(callsign: s.owner ?? s.callsign) }
             .buttonStyle(.bordered)
@@ -266,6 +282,19 @@ struct StationDetailView: View {
         }
     }
 
+    private func saveNickname(_ call: String) {
+        var names = Nicknames.load(nicknameStore)
+        let name = nickname.trimmingCharacters(in: .whitespaces)
+        names[call] = name.isEmpty ? nil : name
+        nicknameStore = Nicknames.encode(names)
+    }
+
+    private func togglePath(_ call: String) {
+        var calls = pathStore.split(separator: ",").map(String.init)
+        if calls.contains(call) { calls.removeAll { $0 == call } } else { calls.append(call) }
+        pathStore = calls.suffix(20).joined(separator: ",")
+    }
+
     private func telemetrySection(_ t: TelemetryReport) -> some View {
         Section(t.title.isEmpty ? "Telemetry" : "Telemetry · \(t.title)") {
             ForEach(Array(t.channels.enumerated()), id: \.offset) { _, channel in
@@ -291,13 +320,38 @@ struct StationDetailView: View {
     private func info(_ s: StationDetail, now: Date) -> some View {
         Section("Packets") {
             if let owner = s.owner { LabeledContent("Owner", value: owner) }
+            if let platform = s.platform { LabeledContent("Platform", value: platform) }
+            if !s.destination.isEmpty { LabeledContent("Destination", value: s.destination) }
+            if let freq = s.frequencyText { LabeledContent("Frequency", value: freq) }
+            if let mice = s.micEStatus { LabeledContent("Mic-E status", value: mice) }
+            if s.ambiguityDigits > 0 { LabeledContent("Position ambiguity", value: "\(s.ambiguityDigits) digit(s) hidden") }
+            if s.messageCapable { LabeledContent("Messaging", value: "Can receive messages") }
+            if s.isIgate { LabeledContent("IGate", value: "Gates RF to APRS-IS") }
+            if !s.port.isEmpty { LabeledContent("Heard on port", value: s.port) }
+            if let bearing = s.dfBearing?.doubleValue {
+                LabeledContent("DF bearing", value: "\(Int(bearing))° \(Units.compass(bearing))" + (s.dfRangeMeters.map { " · \(Units.distance($0.doubleValue, metric: metric))" } ?? ""))
+            }
             LabeledContent("Last heard", value: "\(s.heardAt.formatted(date: .omitted, time: .standard)) (\(Units.age(s.heardAt, now: now)))")
             LabeledContent("Packets heard", value: "\(s.packetCount)" + (s.heardOnRadio ? " · last on RF" : ""))
             if let coverage = s.coverageMeters?.doubleValue {
                 LabeledContent("Radio coverage (PHG)", value: Units.distance(coverage, metric: metric))
             }
             if !s.path.isEmpty { LabeledContent("Path", value: s.path).textSelection(.enabled) }
+            if !s.pathNodes.isEmpty {
+                LabeledContent("Route", value: s.pathNodes.split(separator: ",", omittingEmptySubsequences: false)
+                    .map { $0.isEmpty ? "?" : String($0) }.joined(separator: " → "))
+            }
             LabeledContent("Symbol", value: "\(s.symbolTable)\(s.symbol)")
         }
+    }
+}
+
+/** Your names for stations, saved as JSON. */
+enum Nicknames {
+    static func load(_ text: String) -> [String: String] {
+        (try? JSONDecoder().decode([String: String].self, from: Data(text.utf8))) ?? [:]
+    }
+    static func encode(_ names: [String: String]) -> String {
+        (try? String(data: JSONEncoder().encode(names), encoding: .utf8)) ?? ""
     }
 }

@@ -1,5 +1,8 @@
 import Foundation
 import UserNotifications
+#if os(macOS)
+import AppKit
+#endif
 
 /** Local notifications for incoming APRS messages. Tapping one opens that conversation. */
 final class MessageNotifier: NSObject, ObservableObject, UNUserNotificationCenterDelegate {
@@ -26,6 +29,19 @@ final class MessageNotifier: NSObject, ObservableObject, UNUserNotificationCente
         content.userInfo = ["sender": sender]
         let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request)
+    }
+
+    /** A watched-station or weather alert, with its own sound on the Mac (iOS uses the default sound). */
+    func postAlert(title: String, body: String, sound: String) {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+        content.threadIdentifier = "alerts"
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
+        #if os(macOS)
+        if sound != "Default" { NSSound(named: NSSound.Name(sound))?.play() }
+        #endif
     }
 
     func setBadge(_ count: Int) {

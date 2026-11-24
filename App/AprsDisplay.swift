@@ -77,12 +77,14 @@ enum AprsSymbol {
 
     static func info(table: String, symbol: String) -> Info {
         guard let code = symbol.first else { return Info(name: "Unknown symbol", image: "mappin") }
-        if table == "/" { return primary[code] ?? Info(name: "Symbol /\(code)", image: "mappin") }
+        if table == "/" {
+            return primary[code] ?? Info(name: AprsSymbolNames.primary[code] ?? "Symbol /\(code)", image: "mappin")
+        }
         let overlay = table == "\\" ? "" : " (overlay \(table))"
         if let known = alternate[code] {
             return Info(name: known.name + overlay, image: known.image)
         }
-        return Info(name: "Symbol \\\(code)\(overlay)", image: "mappin")
+        return Info(name: (AprsSymbolNames.alternate[code] ?? "Symbol \\\(code)") + overlay, image: "mappin")
     }
 
     /** Symbols offered for your own beacon. */

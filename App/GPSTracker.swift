@@ -1,3 +1,4 @@
+import AprsCore
 import CoreLocation
 import SwiftUI
 
@@ -7,6 +8,8 @@ final class GPSTracker: NSObject, ObservableObject, CLLocationManagerDelegate {
     @Published private(set) var status: String?
     /** Most recent usable fix, even when it is too close to the last one to extend the trail. */
     @Published private(set) var latest: CLLocation?
+    /** True while positions come from an external GPS (serial or network NMEA, gpsd) instead of Core Location. */
+    @Published private(set) var external = false
     private let manager = CLLocationManager()
 
     override init() {
@@ -22,6 +25,34 @@ final class GPSTracker: NSObject, ObservableObject, CLLocationManagerDelegate {
         updateAuthorization()
     }
 
+    /** A fix from an external GPS. Fixes older than 30 seconds are ignored. */
+    func ingest(_ fix: ExternalFix) {
+        let time = Date(timeIntervalSince1970: Double(fix.timeMillis) / 1000)
+        guard abs(time.timeIntervalSinceNow) < 30, latest?.timestamp != time else { return }
+        if !external {
+            external = true
+            manager.stopUpdatingLocation()
+        }
+        let location = CLLocation(
+            coordinate: CLLocationCoordinate2D(latitude: fix.latitude, longitude: fix.longitude),
+            altitude: fix.altitudeMeters?.doubleValue ?? 0, horizontalAccuracy: fix.accuracyMeters,
+            verticalAccuracy: fix.altitudeMeters == nil ? -1 : 10,
+            course: fix.courseDegrees?.doubleValue ?? -1, speed: (fix.speedKnots?.doubleValue).map { $0 / 1.943844 } ?? -1,
+            timestamp: time)
+        latest = location
+        Self.remember(location)
+        if let last = track.last, location.distance(from: last) < 5 { return }
+        track = Array((track + [location]).suffix(2_000))
+        status = nil
+    }
+
+    /** Back to Core Location after an external GPS is turned off. */
+    func endExternal() {
+        guard external else { return }
+        external = false
+        if tracking { updateAuthorization() }
+    }
+
     func stop() {
         tracking = false
         latest = nil
@@ -34,7 +65,7 @@ final class GPSTracker: NSObject, ObservableObject, CLLocationManagerDelegate {
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard tracking else { return }
+        guard tracking, !external else { return }
         if let fix = locations.last(where: { $0.horizontalAccuracy >= 0 }) {
             latest = fix
             Self.remember(fix)

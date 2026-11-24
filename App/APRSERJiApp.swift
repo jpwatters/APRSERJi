@@ -71,7 +71,8 @@ private final class AprsModel: ObservableObject {
                  areas: [CoverageArea], watch: [String]) -> Bool {
         guard let core, !areas.isEmpty,
               core.startAreas(callsign: account, passcode: passcode, host: host, port: port,
-                              areas: Self.encode(areas), extraFilter: WatchList.serverFilter(watch)) else { return false }
+                              areas: Self.encode(areas), extraFilter: WatchList.serverFilter(watch),
+                              backupServers: UserDefaults.standard.string(forKey: "backupServers") ?? "") else { return false }
         session = (account, passcode, host, port)
         self.areas = areas
         self.watch = watch
@@ -201,6 +202,22 @@ private struct StationMap: View {
     @AppStorage("viewMaxAgeMinutes") private var viewMaxAgeMinutes = 0
     @AppStorage("viewMaxMiles") private var viewMaxMiles = 0
     @AppStorage("viewWatchList") private var viewWatchList = ""
+    @AppStorage("viewOnly") private var viewOnly = ""
+    @AppStorage("layerLabels") private var layerLabels: StationLabels = .off
+    @AppStorage("layerDF") private var layerDF = true
+    @AppStorage("layerHorizons") private var layerHorizons = false
+    @AppStorage("layerAmbiguity") private var layerAmbiguity = true
+    @AppStorage("layerShapes") private var layerShapes = true
+    @AppStorage("layerPathsRF") private var layerPathsRF = false
+    @AppStorage("radarOpacity") private var radarOpacity = 0.0
+    @AppStorage("nicknames") private var nicknameStore = ""
+    @AppStorage("pathStations") private var pathStore = ""
+    @ObservedObject private var extras = MapExtras.shared
+    @State private var showGoTo = false
+    @State private var goToText = ""
+    @State private var goToProblem = false
+    @State private var showMultiTrack = false
+    @State private var tick = 0
     @State private var unread = 0
     @AppStorage("notifyMessages") private var notify = true
     @ObservedObject private var notifier = MessageNotifier.shared
@@ -228,7 +245,7 @@ private struct StationMap: View {
                         .tabItem { Label("Stations", systemImage: "list.bullet") }
                         .tag(2)
                     ChatView(core: core, account: normalizedCallsign(callsign), revision: model.revision,
-                             transportError: model.chatError, recipient: $recipient)
+                             transportError: model.chatError, recipient: $recipient, myPosition: gps.latest?.coordinate)
                         .tabItem { Label("Messages", systemImage: "bubble.left.and.bubble.right") }
                         .badge(unread)
                         .tag(1)
@@ -240,12 +257,30 @@ private struct StationMap: View {
                     SetupView(core: core, mapCenter: center, gps: gps)
                         .tabItem { Label("Setup", systemImage: "gearshape") }
                         .tag(3)
+                    ToolsView(core: core, stations: model.stations, origin: origin.coordinate, originLabel: origin.label,
+                              mapCenter: center, myPosition: gps.latest?.coordinate ?? BeaconSync.fixedCoordinate(),
+                              telemetry: model.telemetry,
+                              onShowOnMap: { coordinate, call in
+                                  followGPS = false
+                                  focus = MapFocus(callsign: call ?? "", coordinate: coordinate)
+                                  if let call { selectedStation = call }
+                                  tab = 0
+                              },
+                              onMessage: { openChat(with: $0) },
+                              onMultiTrack: { showMultiTrack = true })
+                        .tabItem { Label("Tools", systemImage: "wrench.and.screwdriver") }
+                        .tag(5)
                 }
             }
             .onAppear {
                 if notify { MessageNotifier.shared.requestAuthorization() }
             }
+            .sheet(isPresented: $showMultiTrack) {
+                MultiTrackView(stations: model.stations, tracks: model.tracks, preset: tilePreset)
+            }
             .onAppear {
+                SatellitesView.loadAtLaunch(core: core)
+                DispatchQueue.global(qos: .utility).async { TileCache.prune(maxBytes: TileCache.budgetBytes) }
                 startBeaconGPSIfNeeded()
                 refreshSavedPasscode()
                 scheduleAutoConnect()
@@ -274,8 +309,27 @@ private struct StationMap: View {
             .task {
                 while !Task.isCancelled {
                     handle(model.refresh())
+                    let station = normalizedCallsign(callsign)
+                    core.setStation(callsign: station)
+                    #if os(macOS)
+                    ExternalGps.shared.tick(core: core, gps: gps)
+                    #endif
+                    let here = gps.latest?.coordinate ?? BeaconSync.fixedCoordinate()
+                    core.setOwnPosition(latitude: here?.latitude ?? 0, longitude: here?.longitude ?? 0,
+                                        altitudeMeters: gps.latest.map { $0.verticalAccuracy >= 0 ? $0.altitude : .nan } ?? .nan,
+                                        valid: here != nil)
                     BeaconSync.apply(core: core, gps: gps)
-                    TncSync.apply(core: core)
+                    PortStore.apply(core: core)
+                    ReportsSync.apply(core: core)
+                    WeatherStation.shared.tick(core: core)
+                    AnsrvrKeepalive.tick(core: core, account: station)
+                    WatchAlerts.shared.tick(stations: model.stations, origin: origin.coordinate)
+                    TrackLogger.shared.tick(tracks: model.tracks, own: gps.latest, ownCall: station)
+                    warnings.updateAprs(bulletins: model.bulletins.map {
+                        AprsBulletinText(sender: $0.sender, destination: $0.destination, text: $0.text)
+                    })
+                    if tick % 5 == 0 { extras.updateSatellites(core: core, observer: origin.coordinate) }
+                    tick += 1
                     warnings.refreshIfNeeded(enabled: nwsEnabled, location: origin.coordinate,
                                              reachMeters: Double(max(rangeCenter, rangeGPS)) * 1609.344)
                     model.updateCoverage(coverageAreas, watch: WatchList.parse(viewWatchList))
@@ -395,6 +449,29 @@ private struct StationMap: View {
                     .padding(6)
             }
             .overlay(alignment: .top) { mapOverlay }
+            .overlay {
+                if extras.measureA != nil && extras.measureB == nil {
+                    Image(systemName: "plus").font(.title2.weight(.light)).foregroundStyle(.blue).allowsHitTesting(false)
+                }
+            }
+            .overlay(alignment: .bottomLeading) {
+                if let a = extras.measureA {
+                    let b = extras.measureB ?? center
+                    Text("A→\(extras.measureB == nil ? "center" : "B"): \(Units.distance(Geo.distance(a, b), metric: UserDefaults.standard.bool(forKey: "useMetric"))) at \(Int(Geo.bearing(from: a, to: b).rounded()))° \(Units.compass(Geo.bearing(from: a, to: b)))")
+                        .font(.callout.monospacedDigit())
+                        .padding(6)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
+                        .padding(8)
+                }
+            }
+            .alert("Go to", isPresented: $showGoTo) {
+                TextField("41.5, -88.1 · EN51 · KC9KKO-9", text: $goToText)
+                Button("Go") { goTo() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Enter decimal latitude and longitude, a grid square, or a callsign on the map.")
+            }
+            .alert("Couldn't find that", isPresented: $goToProblem) { Button("OK", role: .cancel) {} }
             .sheet(isPresented: Binding(get: { whoIsCallsign != nil }, set: { if !$0 { whoIsCallsign = nil } })) {
                 WhoIsView(callsign: whoIsCallsign ?? "")
             }
@@ -455,6 +532,23 @@ private struct StationMap: View {
                         .toggleStyle(.button)
                         .help("Follow GPS")
                 }
+                Menu {
+                    Button("Go to place, grid or callsign…") { showGoTo = true }
+                    Divider()
+                    Button("Measure: set A at map center") { extras.measureA = center; extras.measureB = nil }
+                    if extras.measureA != nil {
+                        Button("Measure: set B at map center") { extras.measureB = center }
+                        Button("Clear measurement") { extras.measureA = nil; extras.measureB = nil }
+                    }
+                    Divider()
+                    Button("MultiTrack…") { showMultiTrack = true }
+                    Toggle("Weather radar", isOn: Binding(get: { radarOpacity > 0 }, set: { radarOpacity = $0 ? 0.5 : 0 }))
+                } label: {
+                    Image(systemName: "location.magnifyingglass")
+                }
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("Go to, measure, MultiTrack, radar")
                 Button { withAnimation(.snappy) { showMapControls.toggle() } } label: {
                     Image(systemName: showMapControls ? "chevron.up" : "slider.horizontal.3")
                 }
@@ -522,8 +616,20 @@ private struct StationMap: View {
             layers.ringCenter = origin.coordinate
             layers.ringRadii = (1...max(1, ringCount)).map { Double($0) * ringSpacing * 1609.344 }
         }
-        layers.alerts = nwsEnabled ? warnings.mapped : []
+        layers.alerts = nwsEnabled ? warnings.mapped + warnings.aprsMapped : []
         layers.watched = WatchList.parse(viewWatchList)
+        layers.labels = layerLabels
+        layers.nicknames = Nicknames.load(nicknameStore)
+        var paths = Set(pathStore.split(separator: ",").map(String.init))
+        if let selected = selectedStation { paths.insert(selected) }
+        if layerPathsRF { for s in mapStations where s.heardOnRadio { paths.insert(s.callsign) } }
+        layers.pathStations = paths
+        layers.showDF = layerDF
+        layers.showHorizons = layerHorizons
+        layers.showAmbiguity = layerAmbiguity
+        layers.showShapes = layerShapes
+        layers.radarOpacity = radarOpacity
+        extras.apply(to: &layers, metric: UserDefaults.standard.bool(forKey: "useMetric"))
         return layers
     }
 
@@ -556,7 +662,7 @@ private struct StationMap: View {
     private var viewFilter: ViewFilter {
         ViewFilter(stations: viewStations, weather: viewWeather, objects: viewObjects, source: viewSource,
                    maxAgeMinutes: viewMaxAgeMinutes, maxMiles: viewMaxMiles, movingOnly: viewMovingOnly,
-                   hideInfrastructure: viewHideInfrastructure, watched: WatchList.parse(viewWatchList))
+                   hideInfrastructure: viewHideInfrastructure, watched: WatchList.parse(viewWatchList), only: viewOnly)
     }
 
     private var mapStations: [StationDetail] {
@@ -622,6 +728,20 @@ private struct StationMap: View {
             }
         }
         .padding(.horizontal)
+    }
+
+    private func goTo() {
+        let text = goToText.trimmingCharacters(in: .whitespaces)
+        if let station = model.stations.first(where: { $0.callsign == text.uppercased() }) {
+            followGPS = false
+            focus = MapFocus(callsign: station.callsign, coordinate: station.coordinate)
+            selectedStation = station.callsign
+        } else if let point = Geo.parse(text) {
+            followGPS = false
+            focus = MapFocus(callsign: "", coordinate: point, meters: 20_000)
+        } else {
+            goToProblem = true
+        }
     }
 
     private func openChat(with callsign: String) {

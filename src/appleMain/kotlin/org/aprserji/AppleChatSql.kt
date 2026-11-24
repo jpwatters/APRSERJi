@@ -43,8 +43,9 @@ internal class AppleChatSql(path: String) : ChatSql {
     override fun <T> query(sql: String, values: List<Any?>, read: (ChatSqlRow) -> T): List<T> =
         statement(sql, values) { cursor ->
             val row = object : ChatSqlRow {
+                // NULL reads as "" so optional archive columns never throw.
                 override fun text(index: Int): String =
-                    checkNotNull(sqlite3_column_text(cursor, index)).reinterpret<ByteVar>().toKString()
+                    sqlite3_column_text(cursor, index)?.reinterpret<ByteVar>()?.toKString() ?: ""
                 override fun number(index: Int): Long = sqlite3_column_int64(cursor, index)
             }
             buildList {
@@ -81,8 +82,11 @@ internal class AppleChatSql(path: String) : ChatSql {
                     val index = offset + 1
                     val code = when (value) {
                         null -> sqlite3_bind_null(cursor, index)
+                        is Double -> sqlite3_bind_double(cursor, index, value)
+                        is Float -> sqlite3_bind_double(cursor, index, value.toDouble())
                         is Number -> sqlite3_bind_int64(cursor, index, value.toLong())
                         is String -> aprs_bind_text(cursor, index, value)
+                        is Boolean -> sqlite3_bind_int64(cursor, index, if (value) 1L else 0L)
                         else -> error("Unsupported chat SQL parameter")
                     }
                     checkResult(code)

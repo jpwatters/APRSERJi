@@ -60,9 +60,64 @@ struct MapFocus: Equatable {
 }
 
 final class StationAnnotation: MKPointAnnotation {
+    var callsign = ""
     var kind = "station"
     var image = "mappin"
     var watched = false
+}
+
+/** Something else drawn as a marker: a satellite, an imported waypoint or a digital-mode spot. */
+final class ExtraAnnotation: MKPointAnnotation {
+    var kind = "waypoint"
+    var image = "mappin"
+    var tint: PlatformColor = .systemGray
+}
+
+/** A marker the map shows besides stations. */
+struct MapMarker: Equatable {
+    let id: String
+    let title: String
+    let subtitle: String
+    let coordinate: CLLocationCoordinate2D
+    let kind: String
+    let image: String
+
+    static func == (a: MapMarker, b: MapMarker) -> Bool {
+        a.id == b.id && a.title == b.title && a.subtitle == b.subtitle && a.coordinate.latitude == b.coordinate.latitude
+            && a.coordinate.longitude == b.coordinate.longitude && a.image == b.image
+    }
+}
+
+/** A line or polygon drawn over the map (imported tracks, measure line, DF bearings, shapes). */
+struct MapShape {
+    let id: String
+    let points: [CLLocationCoordinate2D]
+    let closed: Bool
+    let color: PlatformColor
+    var dashed = false
+    var width: CGFloat = 2
+    var fillAlpha: CGFloat = 0.12
+
+    var signature: String {
+        "\(closed)|\(dashed)|\(width)|\(fillAlpha)|\(color.description)|" + points.map { String(format: "%.5f,%.5f", $0.latitude, $0.longitude) }.joined(separator: ";")
+    }
+}
+
+/** A circle drawn over the map (satellite footprints, radio horizons). */
+struct MapCircle {
+    let id: String
+    let center: CLLocationCoordinate2D
+    let radius: Double
+    let color: PlatformColor
+    var dashed = false
+    var fillAlpha: CGFloat = 0.05
+
+    var signature: String { String(format: "%.4f,%.4f,%.0f|\(dashed)|\(color.description)", center.latitude, center.longitude, radius) }
+}
+
+enum StationLabels: String, CaseIterable, Identifiable {
+    case off = "No labels", callsign = "Callsign", full = "Callsign and details"
+    var id: String { rawValue }
 }
 
 /** Everything drawn over the map besides station markers. */
@@ -77,6 +132,20 @@ struct MapLayers {
     var alerts: [NWSAlert] = []
     /** Watched callsign patterns, drawn in yellow and never hidden by MapKit's decluttering. */
     var watched: [String] = []
+    var labels: StationLabels = .off
+    /** Your names for stations, shown instead of the callsign. */
+    var nicknames: [String: String] = [:]
+    /** Draw the route each RF packet took (station → digipeaters → IGate) for these stations. */
+    var pathStations: Set<String> = []
+    var showDF = true
+    var showHorizons = false
+    var showAmbiguity = true
+    var showShapes = true
+    /** Weather radar overlay opacity (0 hides it). */
+    var radarOpacity: Double = 0
+    var markers: [MapMarker] = []
+    var shapes: [MapShape] = []
+    var circles: [MapCircle] = []
 }
 
 #if os(macOS)
@@ -100,6 +169,36 @@ final class StyledCircle: MKCircle {
 
 final class StyledPolygon: MKPolygon {
     var color: PlatformColor = .systemRed
+    var fillAlpha: CGFloat = 0.18
+    var dashed = false
+}
+
+/** NEXRAD composite reflectivity tiles from Iowa Environmental Mesonet (USA), refreshed every five minutes. */
+final class RadarTiles: MKTileOverlay {
+    var opacity: CGFloat = 0.5
+    init() {
+        let stamp = Int(Date().timeIntervalSince1970 / 300)
+        super.init(urlTemplate: "https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png?\(stamp)")
+        canReplaceMapContent = false
+        maximumZ = 12
+    }
+}
+
+/** Keeps a keyed set of overlays in step with what should be drawn, replacing only what changed. */
+final class OverlayGroup {
+    private var current: [String: (signature: String, overlay: MKOverlay)] = [:]
+
+    func sync(_ map: MKMapView, wanted: [String: (signature: String, make: () -> MKOverlay)]) {
+        for (key, entry) in current where wanted[key]?.signature != entry.signature {
+            map.removeOverlay(entry.overlay)
+            current[key] = nil
+        }
+        for (key, want) in wanted where current[key] == nil {
+            let overlay = want.make()
+            map.addOverlay(overlay, level: .aboveLabels)
+            current[key] = (want.signature, overlay)
+        }
+    }
 }
 
 #if os(macOS)
@@ -162,6 +261,16 @@ struct OSMMap: NativeMapRepresentable {
         private var reckoningOverlays: [String: (key: String, line: StyledPolyline)] = [:]
         private var ringOverlays: (key: String, circles: [StyledCircle])?
         private var alertOverlays: (key: String, polygons: [StyledPolygon])?
+        private let pathGroup = OverlayGroup()
+        private let dfGroup = OverlayGroup()
+        private let horizonGroup = OverlayGroup()
+        private let ambiguityGroup = OverlayGroup()
+        private let shapeGroup = OverlayGroup()
+        private let extraShapeGroup = OverlayGroup()
+        private let extraCircleGroup = OverlayGroup()
+        private var radar: RadarTiles?
+        private var radarStamp = 0
+        private var extraMarkers: [String: ExtraAnnotation] = [:]
         private var trail: MKPolyline?
         private var position: MKPointAnnotation?
         private var previousFix: Date?
@@ -218,17 +327,20 @@ struct OSMMap: NativeMapRepresentable {
                 let image = station.symbolInfo.image
                 let subtitle = Self.subtitle(for: station)
                 let watched = WatchList.matches(station.callsign, parent.layers.watched)
+                let title = parent.layers.nicknames[station.callsign].map { "\($0) (\(station.callsign))" } ?? station.callsign
                 if let marker = markers[station.callsign], marker.kind == station.kind, marker.image == image,
                    marker.watched == watched {
                     if marker.coordinate.latitude != point.latitude || marker.coordinate.longitude != point.longitude {
                         marker.coordinate = point
                     }
                     if marker.subtitle != subtitle { marker.subtitle = subtitle }
+                    if marker.title != title { marker.title = title }
                 } else {
                     if let old = markers[station.callsign] { map.removeAnnotation(old) }
                     let marker = StationAnnotation()
+                    marker.callsign = station.callsign
                     marker.coordinate = point
-                    marker.title = station.callsign
+                    marker.title = title
                     marker.subtitle = subtitle
                     marker.kind = station.kind
                     marker.image = image
@@ -245,6 +357,7 @@ struct OSMMap: NativeMapRepresentable {
             if let t = station.temperatureC?.doubleValue { parts.append(Units.temperature(t, metric: metric)) }
             if let wind = station.windKph?.doubleValue { parts.append("wind \(Units.speed(kph: wind, metric: metric))") }
             if let knots = station.speedKnots?.doubleValue, knots >= 1 { parts.append(Units.speed(knots: knots, metric: metric)) }
+            if let altitude = station.altitudeMeters?.doubleValue, altitude > 0 { parts.append(Units.altitude(altitude, metric: metric)) }
             if parts.isEmpty { parts.append(station.comment.isEmpty ? station.symbolInfo.name : station.comment) }
             return parts.joined(separator: " · ")
         }
@@ -348,6 +461,222 @@ struct OSMMap: NativeMapRepresentable {
                 }
                 alertOverlays = (alertKey, polygons)
             }
+            updateExtras(on: map, shown: shown)
+        }
+
+        private static func color(hex: String) -> PlatformColor {
+            let digits = hex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+            guard digits.count == 6, let v = Int(digits, radix: 16) else { return .systemRed }
+            return PlatformColor(red: CGFloat((v >> 16) & 255) / 255, green: CGFloat((v >> 8) & 255) / 255,
+                                 blue: CGFloat(v & 255) / 255, alpha: 1)
+        }
+
+        private static func points(_ text: String) -> [CLLocationCoordinate2D] {
+            text.split(separator: ";").compactMap { pair in
+                let v = pair.split(separator: ",").compactMap { Double($0) }
+                return v.count == 2 ? CLLocationCoordinate2D(latitude: v[0], longitude: v[1]) : nil
+            }
+        }
+
+        private static func project(_ from: CLLocationCoordinate2D, bearing: Double, meters: Double) -> CLLocationCoordinate2D {
+            let r = 6_371_000.0, d = meters / r, b = bearing * .pi / 180
+            let lat1 = from.latitude * .pi / 180, lon1 = from.longitude * .pi / 180
+            let lat2 = asin(sin(lat1) * cos(d) + cos(lat1) * sin(d) * cos(b))
+            let lon2 = lon1 + atan2(sin(b) * sin(d) * cos(lat1), cos(d) - sin(lat1) * sin(lat2))
+            return CLLocationCoordinate2D(latitude: lat2 * 180 / .pi, longitude: lon2 * 180 / .pi)
+        }
+
+        /** Packet paths, DF beams, radio horizons, ambiguity cells, shapes, radar, and the app's own markers and lines. */
+        private func updateExtras(on map: MKMapView, shown: [String: StationDetail]) {
+            let layers = parent.layers
+
+            // The route a packet took: station → digipeaters → IGate, where their positions are known.
+            var paths: [String: (signature: String, make: () -> MKOverlay)] = [:]
+            for call in layers.pathStations {
+                guard let station = shown[call] ?? parent.stations.first(where: { $0.callsign == call }) else { continue }
+                let nodes = station.pathNodes.split(separator: ",", omittingEmptySubsequences: false).map(String.init)
+                var coordinates = [station.coordinate]
+                for node in nodes.dropFirst() where !node.isEmpty {
+                    if let hop = shown[node] ?? parent.stations.first(where: { $0.callsign == node }) { coordinates.append(hop.coordinate) }
+                }
+                guard coordinates.count >= 2 else { continue }
+                let sig = coordinates.map { String(format: "%.4f,%.4f", $0.latitude, $0.longitude) }.joined(separator: ";")
+                paths[call] = (sig, {
+                    let line = StyledPolyline(coordinates: coordinates, count: coordinates.count)
+                    line.color = .systemIndigo
+                    line.width = 2.5
+                    return line
+                })
+            }
+            pathGroup.sync(map, wanted: paths)
+
+            // Direction finding: a beam from the reporting station along its bearing.
+            var beams: [String: (signature: String, make: () -> MKOverlay)] = [:]
+            if layers.showDF {
+                for station in parent.stations {
+                    guard let bearing = station.dfBearing?.doubleValue else { continue }
+                    let length = station.dfRangeMeters?.doubleValue ?? 30_000
+                    let spread = station.dfAccuracy?.doubleValue ?? 0
+                    let start = station.coordinate
+                    let sig = String(format: "%.4f,%.4f,%.0f,%.0f,%.0f", start.latitude, start.longitude, bearing, length, spread)
+                    beams[station.callsign] = (sig, {
+                        if spread > 1 {
+                            let ring = [start, Self.project(start, bearing: bearing - spread, meters: length),
+                                        Self.project(start, bearing: bearing + spread, meters: length)]
+                            let wedge = StyledPolygon(coordinates: ring, count: ring.count)
+                            wedge.color = .systemPink
+                            wedge.fillAlpha = 0.1
+                            return wedge
+                        }
+                        let ends = [start, Self.project(start, bearing: bearing, meters: length)]
+                        let line = StyledPolyline(coordinates: ends, count: 2)
+                        line.color = .systemPink
+                        line.width = 2
+                        return line
+                    })
+                }
+            }
+            dfGroup.sync(map, wanted: beams)
+
+            // Radio horizon for aircraft and balloons (4/3-earth, receiver 2 m up, ground at sea level).
+            var horizons: [String: (signature: String, make: () -> MKOverlay)] = [:]
+            if layers.showHorizons {
+                for station in parent.stations {
+                    guard let altitude = station.altitudeMeters?.doubleValue, altitude >= 300 else { continue }
+                    let radius = 4120 * (altitude.squareRoot() + 2.0.squareRoot())
+                    let center = station.coordinate
+                    horizons[station.callsign] = (String(format: "%.3f,%.3f,%.0f", center.latitude, center.longitude, radius), {
+                        let c = StyledCircle(center: center, radius: radius)
+                        c.color = .systemCyan
+                        c.dashed = true
+                        c.fillAlpha = 0.03
+                        return c
+                    })
+                }
+            }
+            horizonGroup.sync(map, wanted: horizons)
+
+            // Ambiguous positions: the cell the station could be anywhere in.
+            var cells: [String: (signature: String, make: () -> MKOverlay)] = [:]
+            if layers.showAmbiguity {
+                for station in parent.stations where station.ambiguityDigits > 0 {
+                    let half: Double = [0.0, 0.1, 1, 10, 60][Int(min(4, station.ambiguityDigits))] / 60 / 2
+                    let c = station.coordinate
+                    let ring = [CLLocationCoordinate2D(latitude: c.latitude - half, longitude: c.longitude - half),
+                                CLLocationCoordinate2D(latitude: c.latitude - half, longitude: c.longitude + half),
+                                CLLocationCoordinate2D(latitude: c.latitude + half, longitude: c.longitude + half),
+                                CLLocationCoordinate2D(latitude: c.latitude + half, longitude: c.longitude - half)]
+                    cells[station.callsign] = (String(format: "%.4f,%.4f,%d", c.latitude, c.longitude, station.ambiguityDigits), {
+                        let p = StyledPolygon(coordinates: ring, count: ring.count)
+                        p.color = .systemGray
+                        p.fillAlpha = 0.12
+                        p.dashed = true
+                        return p
+                    })
+                }
+            }
+            ambiguityGroup.sync(map, wanted: cells)
+
+            // Multiline and area objects.
+            var objectShapes: [String: (signature: String, make: () -> MKOverlay)] = [:]
+            if layers.showShapes {
+                for station in parent.stations where !station.shapePoints.isEmpty {
+                    let coordinates = Self.points(station.shapePoints)
+                    guard coordinates.count >= 2 else { continue }
+                    let color = Self.color(hex: station.shapeColor)
+                    let closed = station.shapeClosed, filled = station.shapeFilled, dashed = station.shapeDashed
+                    objectShapes[station.callsign] = (station.shapePoints + "|\(station.shapeColor)|\(closed)|\(filled)|\(dashed)", {
+                        if closed {
+                            let p = StyledPolygon(coordinates: coordinates, count: coordinates.count)
+                            p.color = color
+                            p.fillAlpha = filled ? 0.25 : 0.05
+                            p.dashed = dashed
+                            return p
+                        }
+                        let line = StyledPolyline(coordinates: coordinates, count: coordinates.count)
+                        line.color = color
+                        line.width = 3
+                        line.dashed = dashed
+                        return line
+                    })
+                }
+            }
+            shapeGroup.sync(map, wanted: objectShapes)
+
+            // The app's own lines and areas, and circles.
+            var lines: [String: (signature: String, make: () -> MKOverlay)] = [:]
+            for shape in layers.shapes where shape.points.count >= 2 {
+                lines[shape.id] = (shape.signature, {
+                    if shape.closed {
+                        let p = StyledPolygon(coordinates: shape.points, count: shape.points.count)
+                        p.color = shape.color
+                        p.fillAlpha = shape.fillAlpha
+                        p.dashed = shape.dashed
+                        return p
+                    }
+                    let line = StyledPolyline(coordinates: shape.points, count: shape.points.count)
+                    line.color = shape.color
+                    line.width = shape.width
+                    line.dashed = shape.dashed
+                    return line
+                })
+            }
+            extraShapeGroup.sync(map, wanted: lines)
+            var rings: [String: (signature: String, make: () -> MKOverlay)] = [:]
+            for circle in layers.circles where circle.radius > 0 {
+                rings[circle.id] = (circle.signature, {
+                    let c = StyledCircle(center: circle.center, radius: circle.radius)
+                    c.color = circle.color
+                    c.dashed = circle.dashed
+                    c.fillAlpha = circle.fillAlpha
+                    return c
+                })
+            }
+            extraCircleGroup.sync(map, wanted: rings)
+
+            // Weather radar.
+            let stamp = Int(Date().timeIntervalSince1970 / 300)
+            if layers.radarOpacity > 0 {
+                if radar == nil || radarStamp != stamp {
+                    if let radar { map.removeOverlay(radar) }
+                    let overlay = RadarTiles()
+                    overlay.opacity = layers.radarOpacity
+                    map.addOverlay(overlay, level: .aboveRoads)
+                    radar = overlay
+                    radarStamp = stamp
+                } else if let radar, radar.opacity != layers.radarOpacity {
+                    radar.opacity = layers.radarOpacity
+                    if let renderer = map.renderer(for: radar) { renderer.alpha = layers.radarOpacity }
+                }
+            } else if let radar {
+                map.removeOverlay(radar)
+                self.radar = nil
+            }
+
+            // Satellites, waypoints and digital-mode spots.
+            let wanted = Dictionary(layers.markers.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+            for (id, marker) in extraMarkers where wanted[id] == nil {
+                map.removeAnnotation(marker)
+                extraMarkers[id] = nil
+            }
+            for (id, want) in wanted {
+                if let marker = extraMarkers[id], marker.image == want.image, marker.kind == want.kind {
+                    if marker.coordinate.latitude != want.coordinate.latitude || marker.coordinate.longitude != want.coordinate.longitude {
+                        marker.coordinate = want.coordinate
+                    }
+                    if marker.subtitle != want.subtitle { marker.subtitle = want.subtitle }
+                    continue
+                }
+                if let old = extraMarkers[id] { map.removeAnnotation(old) }
+                let marker = ExtraAnnotation()
+                marker.coordinate = want.coordinate
+                marker.title = want.title
+                marker.subtitle = want.subtitle
+                marker.kind = want.kind
+                marker.image = want.image
+                extraMarkers[id] = marker
+                map.addAnnotation(marker)
+            }
         }
 
         private func updateTrack(on map: MKMapView) {
@@ -395,6 +724,11 @@ struct OSMMap: NativeMapRepresentable {
         }
 
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
+            if let overlay = overlay as? RadarTiles {
+                let renderer = MKTileOverlayRenderer(tileOverlay: overlay)
+                renderer.alpha = overlay.opacity
+                return renderer
+            }
             if let overlay = overlay as? MKTileOverlay { return MKTileOverlayRenderer(tileOverlay: overlay) }
             if let line = overlay as? StyledPolyline {
                 let renderer = MKPolylineRenderer(polyline: line)
@@ -414,8 +748,9 @@ struct OSMMap: NativeMapRepresentable {
             if let polygon = overlay as? StyledPolygon {
                 let renderer = MKPolygonRenderer(polygon: polygon)
                 renderer.strokeColor = polygon.color.withAlphaComponent(0.9)
-                renderer.fillColor = polygon.color.withAlphaComponent(0.18)
+                renderer.fillColor = polygon.color.withAlphaComponent(polygon.fillAlpha)
                 renderer.lineWidth = 2
+                if polygon.dashed { renderer.lineDashPattern = [6, 4] }
                 return renderer
             }
             if let line = overlay as? MKPolyline {
@@ -436,6 +771,8 @@ struct OSMMap: NativeMapRepresentable {
                 view.canShowCallout = false
                 view.glyphImage = makeGlyph(station.image)
                 view.displayPriority = station.watched ? .required : .defaultHigh
+                view.titleVisibility = parent.layers.labels == .off ? .hidden : .visible
+                view.subtitleVisibility = parent.layers.labels == .full ? .visible : .hidden
                 switch station.watched ? "watched" : station.kind {
                 case "watched": view.markerTintColor = .systemYellow
                 case "weather": view.markerTintColor = .systemTeal
@@ -443,6 +780,22 @@ struct OSMMap: NativeMapRepresentable {
                 case "item": view.markerTintColor = .systemPurple
                 default: view.markerTintColor = .systemRed
                 }
+                return view
+            }
+            if let extra = annotation as? ExtraAnnotation {
+                let view = mapView.dequeueReusableAnnotationView(withIdentifier: "extra") as? MKMarkerAnnotationView
+                    ?? MKMarkerAnnotationView(annotation: extra, reuseIdentifier: "extra")
+                view.annotation = extra
+                view.canShowCallout = true
+                view.glyphImage = makeGlyph(extra.image)
+                view.titleVisibility = .visible
+                switch extra.kind {
+                case "satellite": view.markerTintColor = .systemIndigo
+                case "digital": view.markerTintColor = .systemMint
+                case "measure": view.markerTintColor = .systemBlue
+                default: view.markerTintColor = .systemBrown
+                }
+                view.displayPriority = extra.kind == "satellite" ? .required : .defaultLow
                 return view
             }
             guard let point = annotation as? MKPointAnnotation, point === position else { return nil }
@@ -481,7 +834,7 @@ struct OSMMap: NativeMapRepresentable {
 
         func mapView(_ mapView: MKMapView, didSelect view: MKAnnotationView) {
             updateCalloutPoint(mapView)
-            let callsign = (view.annotation as? MKPointAnnotation)?.title
+            let callsign = (view.annotation as? StationAnnotation)?.callsign
             DispatchQueue.main.async { [weak self] in
                 self?.parent.selectedStation = callsign.flatMap { self?.markers[$0] != nil ? $0 : nil }
             }
@@ -489,7 +842,7 @@ struct OSMMap: NativeMapRepresentable {
 
         func mapView(_ mapView: MKMapView, didDeselect view: MKAnnotationView) {
             updateCalloutPoint(mapView)
-            let callsign = (view.annotation as? MKPointAnnotation)?.title
+            let callsign = (view.annotation as? StationAnnotation)?.callsign
             DispatchQueue.main.async { [weak self] in
                 if self?.parent.selectedStation == callsign { self?.parent.selectedStation = nil }
             }

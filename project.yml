@@ -24,7 +24,11 @@ targets:
             pdeffenb.homeip.net:
               NSExceptionAllowsInsecureHTTPLoads: true
         UILaunchScreen: {}
-        NSLocalNetworkUsageDescription: APRSERJi connects to software modems such as Dire Wolf and UZ7HO on your local network.
+        NSLocalNetworkUsageDescription: &localNetwork APRSERJi connects to software modems such as Dire Wolf and UZ7HO, Tempest weather hubs and other APRS programs on your local network.
+        NSBonjourServices: &bonjour
+          - _kiss-tnc._tcp
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
     sources: [App]
     dependencies:
       - sdk: libsqlite3.tbd
@@ -47,6 +51,9 @@ targets:
         NSLocationWhenInUseUsageDescription: *locationUsage
         NSLocationUsageDescription: *locationUsage
         NSAppTransportSecurity: *tileTransport
+        NSLocalNetworkUsageDescription: *localNetwork
+        NSBonjourServices: *bonjour
+        NSBluetoothAlwaysUsageDescription: APRSERJi connects to Bluetooth TNCs such as the Mobilinkd TNC4, BTECH UV-PRO and Kenwood TH-D74/D75.
     entitlements:
       path: build/macOS.entitlements
       properties:

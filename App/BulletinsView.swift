@@ -19,6 +19,20 @@ struct BulletinsView: View {
     @State private var announcements: [ChatRow] = []
 
     private var groups: [String] { savedGroups.split(separator: ",").map(String.init).filter { !$0.isEmpty } }
+    @AppStorage("ansrvrKeepalive") private var keepalive = true
+
+    /** Groups ANSRVR has confirmed, from its replies (newest decides: joined or left). */
+    private var confirmed: Set<String> {
+        var state: [String: Bool] = [:]
+        for row in announcements.reversed() where !row.outgoing {
+            let text = row.body.uppercased()
+            for group in groups where text.contains(group) {
+                if ["REMOVED", "LEFT", "UNSUBSCRIBED", "NOT A MEMBER"].contains(where: text.contains) { state[group] = false }
+                else if ["JOIN", "ADDED", "WELCOME", "MEMBER", "SUBSCRIBED", "YOU ARE IN"].contains(where: text.contains) { state[group] = true }
+            }
+        }
+        return Set(state.filter(\.value).keys)
+    }
 
     var body: some View {
         NavigationStack {
@@ -90,6 +104,11 @@ struct BulletinsView: View {
             ForEach(groups, id: \.self) { name in
                 HStack {
                     Text(name).font(.body.monospaced())
+                    if confirmed.contains(name) {
+                        Label("confirmed", systemImage: "checkmark.seal.fill").font(.caption).foregroundStyle(.green)
+                    } else {
+                        Text("requested").font(.caption).foregroundStyle(.secondary)
+                    }
                     Spacer()
                     Button("Leave") { send("U", name, "", remember: false, forget: name) }
                         .buttonStyle(.borderless)
@@ -110,6 +129,12 @@ struct BulletinsView: View {
                         .disabled(cqText.trimmingCharacters(in: .whitespaces).isEmpty || !groups.contains(group))
                 }
             }
+            HStack {
+                Button("Which groups am I in?") { send("?", "", "", remember: false) }
+                Button("List groups") { send("L", "", "", remember: false) }
+            }
+            .buttonStyle(.bordered)
+            Toggle("Keep my groups alive (rejoin every 6 hours)", isOn: $keepalive)
             if let problem { Text(problem).font(.caption).foregroundStyle(.red) }
             ForEach(announcements.prefix(30), id: \.id) { row in
                 VStack(alignment: .leading, spacing: 2) {
@@ -165,6 +190,22 @@ private struct AlertRow: View {
             }
             if !alert.headline.isEmpty { Text(alert.headline).font(.callout) }
             Text(alert.area).font(.caption).foregroundStyle(.secondary).lineLimit(3)
+        }
+    }
+}
+
+/** Rejoins saved ANSRVR groups every six hours so they don't expire after 12 hours of quiet. */
+enum AnsrvrKeepalive {
+    static func tick(core: AppleAprs, account: String, defaults d: UserDefaults = .standard) {
+        guard d.object(forKey: "ansrvrKeepalive") as? Bool ?? true, AprsProtocol.shared.validCallsign(value: account) else { return }
+        let groups = (d.string(forKey: "ansrvrGroups") ?? "").split(separator: ",").map(String.init).filter { !$0.isEmpty }
+        guard !groups.isEmpty else { return }
+        let last = d.double(forKey: "ansrvrKeepaliveAt")
+        let now = Date().timeIntervalSince1970
+        guard now - last >= 6 * 3600 else { return }
+        d.set(now, forKey: "ansrvrKeepaliveAt")
+        Task {
+            for group in groups { _ = try? await core.announcement(account: account, action: "J", group: group, text: "") }
         }
     }
 }

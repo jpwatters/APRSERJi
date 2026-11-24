@@ -9,6 +9,7 @@ import org.aprsfoundation.core.AprsSpatial
 import org.aprsfoundation.core.AprsStation
 import org.aprsfoundation.core.AprsWeather
 import org.aprsfoundation.core.RadioPacket
+import org.aprsfoundation.core.StationCapabilities
 import org.aprsfoundation.core.TelemetryDefinition
 import org.aprsfoundation.core.TelemetrySample
 
@@ -49,6 +50,38 @@ data class StationDetail(
     val hasTelemetry: Boolean,
     /** True when the last packet came from the radio (TNC) rather than APRS-IS. */
     val heardOnRadio: Boolean,
+    /** Name of the radio port the last RF packet arrived on, or "" for APRS-IS. */
+    val port: String,
+    /** The packet's destination (tocall) and the device or software it identifies, when known. */
+    val destination: String,
+    val platform: String?,
+    /** Digits of position ambiguity (0 = exact, 4 = to the nearest degree). */
+    val ambiguityDigits: Int,
+    val micEStatus: String?,
+    /** The station's latest status report (">" packet). */
+    val statusText: String?,
+    /** The station has shown it can receive messages ("=" or "@" reports, or it sent a message). */
+    val messageCapable: Boolean,
+    /** Advertised voice frequency, e.g. "146.940 MHz -0.600 T107 R25", or null. */
+    val frequencyText: String?,
+    val frequencyMhz: Double?,
+    /** The comment mentions MHz but not in the standard "146.940MHz T107 -060" form. */
+    val frequencyMalformed: Boolean,
+    /** The station gates RF to APRS-IS (IGate symbol, or seen as the gating station in other paths). */
+    val isIgate: Boolean,
+    /** A multiline (line or polygon) or area object as "lat,lon;lat,lon…", or "" for none. */
+    val shapePoints: String,
+    val shapeClosed: Boolean,
+    val shapeFilled: Boolean,
+    val shapeDashed: Boolean,
+    /** "#rrggbb". */
+    val shapeColor: String,
+    /** Direction finding report: bearing (degrees), range (meters) and bearing accuracy (degrees). */
+    val dfBearing: Double?,
+    val dfRangeMeters: Double?,
+    val dfAccuracy: Double?,
+    /** Stations the last packet passed through: source, digipeaters used, then the IGate, comma separated. */
+    val pathNodes: String,
 )
 
 /** A new chat message addressed to the signed-in account, for notifications only. */
@@ -56,6 +89,13 @@ data class IncomingAlert(val sender: String, val text: String, val receivedAtMil
 
 /** One position in a station's path of travel. */
 data class TrackPoint(val latitude: Double, val longitude: Double, val timeMillis: Long)
+
+/** A new track point or telemetry sample, for the station archive. */
+internal sealed class ArchiveEvent {
+    class Position(val call: String, val point: TrackPoint, val speedKnots: Double?, val course: Double?,
+                   val altitude: Double?, val radio: Boolean) : ArchiveEvent()
+    class Telemetry(val sample: TelemetrySample) : ArchiveEvent()
+}
 
 /** One analog telemetry channel with its PARM name, UNIT and EQNS-scaled value. */
 data class TelemetryChannel(val name: String, val unit: String, val raw: Double?, val value: Double?)
@@ -70,7 +110,8 @@ data class TelemetryReport(val callsign: String, val sequence: String, val timeM
  */
 class PacketInsights(private val ttlMillis: Long = 1_800_000, private val maxEntries: Int = 4_000) {
     private class Extra(val objectKind: String?, val owner: String?, val path: String, val packets: Int,
-                        val heardAtMillis: Long, val radio: Boolean)
+                        val heardAtMillis: Long, val radio: Boolean, val port: String, val destination: String,
+                        val platform: String?, val messageCapable: Boolean, val nodes: String)
 
     private val extras = LinkedHashMap<String, Extra>()
     private val weather = LinkedHashMap<String, AprsWeather>()
@@ -79,12 +120,18 @@ class PacketInsights(private val ttlMillis: Long = 1_800_000, private val maxEnt
     private val samples = LinkedHashMap<String, TelemetrySample>()
     private val definitions = LinkedHashMap<String, MutableMap<String, TelemetryDefinition>>()
     private val bulletinMap = LinkedHashMap<String, AprsBulletin>()
+    private val statusMap = LinkedHashMap<String, String>()
+    private val igates = LinkedHashMap<String, Long>()
+    /** New track points and telemetry for the archive; the owner drains it. */
+    internal val archive = ArrayList<ArchiveEvent>()
+    /** Queries (?APRS…) and auto-replies are answered, not announced. */
+    private val quietPrefixes = listOf("?APRS", "?PING", "?VER", "?IGATE", "?WX", "AA:")
 
     /**
      * Records one packet line. [account] is the signed-in callsign for APRS-IS lines (null for radio lines).
      * Returns an alert when the line is a new chat message for that account.
      */
-    fun receive(line: String, account: String?, nowMillis: Long, radio: Boolean = false): IncomingAlert? {
+    fun receive(line: String, account: String?, nowMillis: Long, radio: Boolean = false, port: String = ""): IncomingAlert? {
         expire(nowMillis)
         val outer = RadioPacket.parse(line, receiveOnly = true) ?: return null
         val packet = outer.content(receiveOnly = true) ?: return null
@@ -95,6 +142,23 @@ class PacketInsights(private val ttlMillis: Long = 1_800_000, private val maxEnt
 
         val station = AprsProtocol.parse(line, nowMillis)
         val report = AprsObservations.weather(line, nowMillis)
+        // The station that gated this packet to APRS-IS is an IGate.
+        val q = outer.path.indexOfFirst { it.startsWith("qA") }
+        if (q >= 0 && q + 1 < outer.path.size && outer.path[q].trimEnd('*') in listOf("qAR", "qAr", "qAO", "qAo")) {
+            val gate = outer.path[q + 1].trimEnd('*')
+            igates.remove(gate)
+            igates[gate] = nowMillis
+        }
+        if (packet.payload.startsWith('>')) {
+            val text = packet.payload.drop(1).let { if (Regex("^\\d{6}z").containsMatchIn(it)) it.drop(7) else it }.trim()
+            if (text.isNotEmpty()) { statusMap.remove(packet.source); statusMap[packet.source] = text.take(200) }
+        }
+        val capable = StationCapabilities.messageCapable(packet.payload) ||
+            (packet.payload.firstOrNull() in listOf('`', '\'') && packet.payload.drop(9).startsWith(">"))
+        if (capable) extras[packet.source]?.let { old ->
+            if (!old.messageCapable) extras[packet.source] = Extra(old.objectKind, old.owner, old.path, old.packets,
+                old.heardAtMillis, old.radio, old.port, old.destination, old.platform, true, old.nodes)
+        }
         val key = station?.callsign ?: report?.call
         if (key != null) {
             val previous = extras.remove(key)
@@ -105,17 +169,21 @@ class PacketInsights(private val ttlMillis: Long = 1_800_000, private val maxEnt
                 else -> previous?.objectKind
             }
             val owner = if (objectKind != null) packet.source else null
+            val platform = DeviceIds.identify(packet.destination, packet.payload) ?: previous?.platform
+            val nodes = runCatching { AprsSpatial.pathNodes(outer).map { it ?: "" }.joinToString(",") }.getOrDefault("")
             extras[key] = Extra(objectKind, owner, outer.path.joinToString(","), (previous?.packets ?: 0) + 1,
-                nowMillis, radio)
+                nowMillis, radio, if (radio) port else "", packet.destination, platform,
+                (previous?.messageCapable ?: false) || (objectKind == null && capable), nodes)
             if (report != null) {
                 weather.remove(key)
                 weather[key] = report
             }
-            if (station != null) addTrackPoint(key, station, nowMillis)
+            if (station != null) addTrackPoint(key, station, nowMillis, radio)
         }
         AprsObservations.telemetry(line, nowMillis)?.let { sample ->
             samples.remove(sample.call)
             samples[sample.call] = sample
+            if (archive.size < 20_000) archive.add(ArchiveEvent.Telemetry(sample))
         }
         AprsObservations.definition(line)?.let { definition ->
             definitions.getOrPut(definition.call) { mutableMapOf() }[definition.kind] = definition
@@ -129,12 +197,16 @@ class PacketInsights(private val ttlMillis: Long = 1_800_000, private val maxEnt
         return alert(message, account, nowMillis)
     }
 
-    private fun addTrackPoint(key: String, station: AprsStation, nowMillis: Long) {
+    private fun addTrackPoint(key: String, station: AprsStation, nowMillis: Long, radio: Boolean) {
         val points = tracks.remove(key) ?: mutableListOf()
         val last = points.lastOrNull()
         val point = TrackPoint(station.latitude, station.longitude, nowMillis)
         // Only real movement extends a track; repeated fixed-station beacons do not.
-        if (last == null || distanceMeters(last, point) >= 25.0) points.add(point)
+        if (last == null || distanceMeters(last, point) >= 25.0) {
+            points.add(point)
+            if (archive.size < 20_000) archive.add(ArchiveEvent.Position(key, point, station.speedKnots,
+                station.courseDegrees, station.altitudeMeters, radio))
+        }
         while (points.size > 300) points.removeAt(0)
         tracks[key] = points
     }
@@ -150,6 +222,7 @@ class PacketInsights(private val ttlMillis: Long = 1_800_000, private val maxEnt
         if (message == null || account.isNullOrEmpty()) return null
         if (!message.recipient.equals(account, ignoreCase = true) || message.sender.equals(account, ignoreCase = true)) return null
         if (message.acknowledgement != null || message.text.isBlank() || message.text.startsWith(')')) return null
+        if (quietPrefixes.any { message.text.startsWith(it, ignoreCase = true) }) return null
         // Senders retry until acknowledged; only the first copy should alert.
         val dedup = "${message.sender.uppercase()}|${message.id ?: message.text}"
         if (alertKeys.containsKey(dedup)) return null
@@ -165,6 +238,9 @@ class PacketInsights(private val ttlMillis: Long = 1_800_000, private val maxEnt
         val kind = extra?.objectKind ?: if (wx != null || s.symbol == '_') "weather" else "station"
         val spatial = AprsSpatial.details(s)
         val predicted = if (nowMillis > 0) AprsSpatial.predicted(s, nowMillis, 600) else null
+        val shape = AprsSpatial.multiline(s) ?: AprsSpatial.area(s)
+        val frequency = StationCapabilities.frequency(s.comment)
+        val mentionsMhz = s.comment.contains("MHz", ignoreCase = true)
         StationDetail(
             callsign = s.callsign, latitude = s.latitude, longitude = s.longitude,
             symbolTable = s.symbolTable.toString(), symbol = s.symbol.toString(), comment = s.comment,
@@ -179,8 +255,42 @@ class PacketInsights(private val ttlMillis: Long = 1_800_000, private val maxEnt
             predictedLatitude = predicted?.latitude, predictedLongitude = predicted?.longitude,
             hasTelemetry = samples.containsKey(s.callsign),
             heardOnRadio = extra?.radio ?: false,
+            port = extra?.port.orEmpty(),
+            destination = extra?.destination.orEmpty(),
+            platform = extra?.platform,
+            ambiguityDigits = s.ambiguityDigits,
+            micEStatus = s.micEStatus,
+            statusText = statusMap[s.callsign],
+            messageCapable = extra?.messageCapable ?: false,
+            frequencyText = frequency?.let { f ->
+                listOfNotNull(
+                    "${format3(f.mhz)} MHz",
+                    f.offsetMhz?.let { (if (it >= 0) "+" else "-") + format3(kotlin.math.abs(it)) },
+                    f.tone, f.rangeMiles?.let { "R$it mi" },
+                ).joinToString(" ")
+            },
+            frequencyMhz = frequency?.mhz,
+            frequencyMalformed = frequency == null && mentionsMhz,
+            isIgate = igates.containsKey(s.callsign) || s.symbol == '&' || (s.symbolTable == '/' && s.symbol == 'I'),
+            shapePoints = shape?.points?.joinToString(";") { "${it.latitude},${it.longitude}" }.orEmpty(),
+            shapeClosed = shape?.closed ?: false,
+            shapeFilled = shape?.filled ?: false,
+            shapeDashed = shape?.dashed ?: false,
+            shapeColor = shape?.color ?: "",
+            dfBearing = spatial.direction?.bearing,
+            dfRangeMeters = spatial.direction?.rangeMeters,
+            dfAccuracy = spatial.direction?.accuracyDegrees,
+            pathNodes = extra?.nodes.orEmpty(),
         )
     }
+
+    private fun format3(v: Double): String {
+        val scaled = kotlin.math.round(v * 1000).toLong()
+        return "${scaled / 1000}." + (scaled % 1000).toString().padStart(3, '0')
+    }
+
+    /** Stations that gated packets to APRS-IS recently. */
+    fun igateCalls(): Set<String> = igates.keys.toSet()
 
     /** Paths of travel with at least two points, keyed by station. */
     fun tracks(): Map<String, List<TrackPoint>> = tracks.filterValues { it.size >= 2 }.mapValues { it.value.toList() }
@@ -216,6 +326,8 @@ class PacketInsights(private val ttlMillis: Long = 1_800_000, private val maxEnt
         tracks.keys.retainAll(extras.keys)
         samples.entries.removeAll { nowMillis - it.value.time >= ttlMillis * 2 }
         bulletinMap.entries.removeAll { nowMillis - it.value.time >= 12 * 3_600_000L }
+        igates.entries.removeAll { nowMillis - it.value >= ttlMillis * 2 }
+        statusMap.keys.retainAll(extras.keys)
     }
 
     private fun trim() {
@@ -225,5 +337,7 @@ class PacketInsights(private val ttlMillis: Long = 1_800_000, private val maxEnt
         while (samples.size > maxEntries) samples.remove(samples.keys.first())
         while (definitions.size > maxEntries) definitions.remove(definitions.keys.first())
         while (bulletinMap.size > 500) bulletinMap.remove(bulletinMap.keys.first())
+        while (statusMap.size > maxEntries) statusMap.remove(statusMap.keys.first())
+        while (igates.size > 2000) igates.remove(igates.keys.first())
     }
 }

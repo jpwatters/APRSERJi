@@ -52,6 +52,8 @@ struct ViewFilter {
     var movingOnly = false
     var hideInfrastructure = false
     var watched: [String] = []
+    /** "", or one of: messaging, frequency, mice, igate, telemetry, altitude, status. */
+    var only = ""
 
     func includes(_ s: StationDetail, origin: CLLocationCoordinate2D, now: Date) -> Bool {
         if WatchList.matches(s.callsign, watched) { return true }
@@ -69,6 +71,16 @@ struct ViewFilter {
         if maxMiles > 0, Geo.distance(origin, s.coordinate) > Double(maxMiles) * 1609.344 { return false }
         if movingOnly, (s.speedKnots?.doubleValue ?? 0) < 1 { return false }
         if hideInfrastructure, s.symbol == "#" || s.symbol == "&" { return false }
+        switch only {
+        case "messaging": if !s.messageCapable { return false }
+        case "frequency": if s.frequencyText == nil { return false }
+        case "mice": if s.micEStatus == nil { return false }
+        case "igate": if !s.isIgate { return false }
+        case "telemetry": if !s.hasTelemetry { return false }
+        case "altitude": if s.altitudeMeters == nil { return false }
+        case "status": if s.statusText == nil { return false }
+        default: break
+        }
         return true
     }
 }
@@ -88,6 +100,7 @@ struct ViewSettingsRow: View {
     @AppStorage("viewMaxAgeMinutes") private var maxAgeMinutes = 0
     @AppStorage("viewMaxMiles") private var maxMiles = 0
     @AppStorage("viewWatchList") private var watchText = ""
+    @AppStorage("viewOnly") private var only = ""
     @State private var draft = ""
 
     var body: some View {
@@ -108,6 +121,16 @@ struct ViewSettingsRow: View {
                     Picker("Heard within", selection: $maxAgeMinutes) {
                         Text("Any time").tag(0)
                         ForEach([5, 10, 15, 20], id: \.self) { Text("\($0) minutes").tag($0) }
+                    }
+                    Picker("Only stations that", selection: $only) {
+                        Text("Any").tag("")
+                        Text("can receive messages").tag("messaging")
+                        Text("advertise a frequency").tag("frequency")
+                        Text("send Mic-E").tag("mice")
+                        Text("are IGates").tag("igate")
+                        Text("send telemetry").tag("telemetry")
+                        Text("report altitude").tag("altitude")
+                        Text("sent a status").tag("status")
                     }
                     Picker("Within distance of you", selection: $maxMiles) {
                         Text("Any distance").tag(0)
@@ -158,6 +181,7 @@ struct ViewSettingsRow: View {
         if maxMiles > 0 { parts.append("\(maxMiles) mi") }
         if movingOnly { parts.append("moving") }
         if hideInfrastructure { parts.append("no digis") }
+        if !only.isEmpty { parts.append(only) }
         let watched = WatchList.parse(watchText).count
         if watched > 0 { parts.append("\(watched) watched") }
         return parts.isEmpty ? "All stations" : parts.joined(separator: " · ")
@@ -165,6 +189,6 @@ struct ViewSettingsRow: View {
 
     private func reset() {
         stations = true; weather = true; objects = true; movingOnly = false; hideInfrastructure = false
-        source = .all; maxAgeMinutes = 0; maxMiles = 0
+        source = .all; maxAgeMinutes = 0; maxMiles = 0; only = ""
     }
 }

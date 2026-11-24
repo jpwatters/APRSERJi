@@ -8,8 +8,33 @@ enum BeaconSource: String, CaseIterable, Identifiable {
 }
 
 enum BeaconMode: String, CaseIterable, Identifiable {
-    case interval = "Fixed interval", genius = "GeniusBeaconing"
+    case interval = "Fixed interval", genius = "GeniusBeaconing", smart = "SmartBeaconing"
     var id: String { rawValue }
+    var code: String {
+        switch self {
+        case .interval: return "interval"
+        case .genius: return "genius"
+        case .smart: return "smart"
+        }
+    }
+}
+
+/** Position precision: ambiguity hides digits, DAO adds them. */
+enum BeaconPrecision: Int, CaseIterable, Identifiable {
+    case degree = -4, tenMinutes = -3, minute = -2, tenthMinute = -1, normal = 0, daoTenth = 1, daoHundredth = 2, daoBase91 = 4
+    var id: Int { rawValue }
+    var label: String {
+        switch self {
+        case .degree: return "Ambiguous: nearest degree (~60 mi)"
+        case .tenMinutes: return "Ambiguous: 10 minutes (~10 mi)"
+        case .minute: return "Ambiguous: 1 minute (~1 mi)"
+        case .tenthMinute: return "Ambiguous: 0.1 minute (~600 ft)"
+        case .normal: return "Normal (0.01 minute, ~60 ft)"
+        case .daoTenth: return "DAO extra digit (~6 ft)"
+        case .daoHundredth: return "DAO two digits (~1 ft)"
+        case .daoBase91: return "DAO base-91 (finest)"
+        }
+    }
 }
 
 /** Pushes the saved beacon settings and the current position to the core. Called once a second. */
@@ -26,24 +51,39 @@ enum BeaconSync {
 
     static func apply(core: AppleAprs, gps: GPSTracker, defaults d: UserDefaults = .standard) {
         let enabled = d.bool(forKey: "beaconEnabled")
-        let genius = (BeaconMode(rawValue: d.string(forKey: "beaconMode") ?? "") ?? .interval) == .genius
+        let mode = BeaconMode(rawValue: d.string(forKey: "beaconMode") ?? "") ?? .interval
         let key = d.string(forKey: "beaconSymbol") ?? "/>"
         let comment = d.string(forKey: "beaconComment") ?? "APRSERJi"
         let source = BeaconSource(rawValue: d.string(forKey: "beaconSource") ?? "") ?? .gps
-        let maximum = genius ? int("geniusMaxMinutes", 30, d) * 60 : max(1, int("beaconMinutes", 10, d)) * 60
+        let maximum: Int
+        switch mode {
+        case .interval: maximum = max(1, int("beaconMinutes", 10, d)) * 60
+        case .genius: maximum = int("geniusMaxMinutes", 30, d) * 60
+        case .smart: maximum = int("smartSlowSeconds", 1800, d)
+        }
         let applied = core.configureBeacon(
-            enabled: enabled, genius: genius,
-            minimumSeconds: Int32(int("geniusMinSeconds", 30, d)), maximumSeconds: Int32(maximum),
+            enabled: enabled, mode: mode.code,
+            minimumSeconds: Int32(mode == .smart ? int("smartMinSeconds", 30, d) : int("geniusMinSeconds", 30, d)),
+            maximumSeconds: Int32(maximum),
             forecastErrorMeters: double("geniusForecastMeters", 160.9344, d),
             distanceMeters: double("geniusDistanceMeters", 1609.344, d),
-            headingDegrees: double("geniusHeading", 30, d),
+            headingDegrees: mode == .smart ? double("smartTurnDegrees", 28, d) : double("geniusHeading", 30, d),
+            slowKnots: double("smartSlowMph", 5, d) / 1.150779, fastKnots: double("smartFastMph", 60, d) / 1.150779,
+            fastSeconds: Int32(int("smartFastSeconds", 180, d)), turnSlope: double("smartTurnSlope", 255, d),
+            turnSeconds: Int32(int("smartTurnSeconds", 15, d)),
             symbolTable: String(key.prefix(1)), symbol: String(key.dropFirst().prefix(1)), comment: comment,
-            viaRadio: d.bool(forKey: "beaconViaRadio"), radioPath: d.string(forKey: "beaconRadioPath") ?? "WIDE1-1,WIDE2-1")
+            micE: d.bool(forKey: "beaconMicE"), micEStatus: d.string(forKey: "beaconMicEStatus") ?? "!ENROUTE!",
+            compressed: d.bool(forKey: "beaconCompressed"), precision: Int32(int("beaconPrecision", 0, d)),
+            timestamp: d.string(forKey: "beaconTimestamp") ?? "none",
+            altitude: d.object(forKey: "beaconAltitude") as? Bool ?? true,
+            courseSpeed: d.object(forKey: "beaconCourseSpeed") as? Bool ?? true)
         if !applied && !enabled {
             // Keep the core's last valid settings, but never keep beaconing with ones the user turned off.
-            _ = core.configureBeacon(enabled: false, genius: false, minimumSeconds: 60, maximumSeconds: 600,
+            _ = core.configureBeacon(enabled: false, mode: "interval", minimumSeconds: 60, maximumSeconds: 600,
                                      forecastErrorMeters: 160, distanceMeters: 1609, headingDegrees: 30,
-                                     symbolTable: "/", symbol: ">", comment: "", viaRadio: false, radioPath: "")
+                                     slowKnots: 5, fastKnots: 60, fastSeconds: 180, turnSlope: 255, turnSeconds: 15,
+                                     symbolTable: "/", symbol: ">", comment: "", micE: false, micEStatus: "",
+                                     compressed: false, precision: 0, timestamp: "none", altitude: true, courseSpeed: true)
         }
         let nowMillis = Int64(Date().timeIntervalSince1970 * 1000)
         switch source {
@@ -57,7 +97,7 @@ enum BeaconSync {
             }
         case .gps:
             // Core Location only reports again after moving, so a fix stays current while tracking is on.
-            if gps.tracking, let fix = gps.latest {
+            if gps.tracking || gps.external, let fix = gps.latest {
                 core.updateBeaconPosition(latitude: fix.coordinate.latitude, longitude: fix.coordinate.longitude,
                                           accuracyMeters: max(0, fix.horizontalAccuracy), timeMillis: nowMillis,
                                           speedKnots: fix.speed >= 0 ? fix.speed * 1.943844 : -1,
@@ -90,8 +130,22 @@ struct BeaconSections: View {
     @AppStorage("beaconComment") private var comment = "APRSERJi"
     @AppStorage("beaconLatitude") private var latitude = ""
     @AppStorage("beaconLongitude") private var longitude = ""
-    @AppStorage("beaconViaRadio") private var viaRadio = false
-    @AppStorage("beaconRadioPath") private var radioPath = "WIDE1-1,WIDE2-1"
+    @AppStorage("smartSlowMph") private var smartSlowMph = 5.0
+    @AppStorage("smartFastMph") private var smartFastMph = 60.0
+    @AppStorage("smartSlowSeconds") private var smartSlowSeconds = 1800
+    @AppStorage("smartFastSeconds") private var smartFastSeconds = 180
+    @AppStorage("smartTurnDegrees") private var smartTurnDegrees = 28.0
+    @AppStorage("smartTurnSlope") private var smartTurnSlope = 255.0
+    @AppStorage("smartTurnSeconds") private var smartTurnSeconds = 15
+    @AppStorage("smartMinSeconds") private var smartMinSeconds = 30
+    @AppStorage("beaconMicE") private var micE = false
+    @AppStorage("beaconMicEStatus") private var micEStatus = "!ENROUTE!"
+    @AppStorage("beaconCompressed") private var compressed = false
+    @AppStorage("beaconPrecision") private var precision = 0
+    @AppStorage("beaconTimestamp") private var timestamp = "none"
+    @AppStorage("beaconAltitude") private var includeAltitude = true
+    @AppStorage("beaconCourseSpeed") private var includeCourseSpeed = true
+    @State private var showSymbols = false
     @AppStorage("useMetric") private var metric = false
     @AppStorage("callsign") private var callsign = ""
 
@@ -108,7 +162,7 @@ struct BeaconSections: View {
         } header: {
             Text("Beacon")
         } footer: {
-            Text("Beacons go out as \(callsign.isEmpty ? "your callsign" : callsign) over APRS-IS when the login is verified (Enable sending + passcode), and on RF through the software modem when Also send on RF is on. The app must stay open.")
+            Text("Beacons go out as \(callsign.isEmpty ? "your callsign" : callsign) over APRS-IS when the login is verified (Enable sending + passcode), and on every radio port set to send beacons. The app must stay open.")
         }
         .onChange(of: enabled) { _, on in
             if on && source == .gps && !gps.tracking { gps.start() }
@@ -154,14 +208,18 @@ struct BeaconSections: View {
         }
 
         Section {
-            Picker("Symbol", selection: $symbolKey) {
-                ForEach(AprsSymbol.beaconChoices, id: \.label) { choice in
-                    Label(choice.label, systemImage: AprsSymbol.info(table: choice.table, symbol: choice.symbol).image)
-                        .tag(choice.table + choice.symbol)
+            Button {
+                showSymbols = true
+            } label: {
+                LabeledContent("Symbol") {
+                    Label(AprsSymbol.info(table: String(symbolKey.prefix(1)), symbol: String(symbolKey.dropFirst().prefix(1))).name,
+                          systemImage: AprsSymbol.info(table: String(symbolKey.prefix(1)), symbol: String(symbolKey.dropFirst().prefix(1))).image)
                 }
             }
+            .buttonStyle(.plain)
+            .sheet(isPresented: $showSymbols) { SymbolPicker(selection: $symbolKey) }
             TextField("Comment", text: $comment)
-            Text("\(comment.count)/43 characters").font(.caption)
+            Text("\(comment.count)/60 characters").font(.caption)
                 .foregroundStyle(commentValid ? Color.secondary : Color.red)
             Picker("Timing", selection: $mode) {
                 ForEach(BeaconMode.allCases) { Text($0.rawValue).tag($0) }
@@ -187,18 +245,67 @@ struct BeaconSections: View {
                     ForEach([5, 10, 15, 30, 60], id: \.self) { Text("\($0) minutes").tag($0) }
                 }
             }
-            Toggle("Also send on RF", isOn: $viaRadio)
-            if viaRadio {
-                TextField("RF path", text: $radioPath)
+            if mode == .smart {
+                LabeledContent("Slow below") { TextField("mph", value: $smartSlowMph, format: .number).frame(width: 60) }
+                LabeledContent("Fast above") { TextField("mph", value: $smartFastMph, format: .number).frame(width: 60) }
+                Picker("Slow rate", selection: $smartSlowSeconds) {
+                    ForEach([600, 900, 1200, 1800, 3600], id: \.self) { Text("every \($0 / 60) minutes").tag($0) }
+                }
+                Picker("Fast rate", selection: $smartFastSeconds) {
+                    ForEach([60, 90, 120, 180, 240], id: \.self) { Text("every \($0) seconds").tag($0) }
+                }
+                Picker("Minimum turn", selection: $smartTurnDegrees) {
+                    ForEach([15.0, 20.0, 28.0, 35.0, 45.0], id: \.self) { Text("\(Int($0))°").tag($0) }
+                }
+                LabeledContent("Turn slope") { TextField("slope", value: $smartTurnSlope, format: .number).frame(width: 60) }
+                Picker("Turn time", selection: $smartTurnSeconds) {
+                    ForEach([10, 15, 20, 30], id: \.self) { Text("\($0) seconds").tag($0) }
+                }
             }
         } header: {
             Text("Report")
         } footer: {
-            Text(mode == .genius
+            Text(mode == .smart
+                 ? "SmartBeaconing beacons at the slow rate below the slow speed and the fast rate above the fast speed, scaling between, and \"corner pegs\" after turning more than the minimum turn plus slope ÷ speed (no sooner than the turn time)."
+                 : mode == .genius
                  ? "GeniusBeaconing predicts where you are from your last beacon's course and speed, and beacons when the real position strays by the forecast error, after the distance traveled, or after the heading change — never faster than At most every, and at least every At least every. A fixed position beacons at the At least every interval."
                  : (source == .fixed
                     ? "A fixed station rarely needs to beacon more often than every 30 minutes."
                     : "Mobile stations usually beacon every 2–10 minutes. Shorter intervals add load to APRS-IS."))
+        }
+        formatSection
+    }
+
+    /** How the position report is encoded: Mic-E, compressed, ambiguity or DAO precision, timestamp. */
+    @ViewBuilder var formatSection: some View {
+        Section {
+            Toggle("Mic-E (compact, used by Kenwood and Yaesu radios)", isOn: $micE)
+            if micE {
+                Picker("Mic-E status", selection: $micEStatus) {
+                    ForEach(["!OFF-DUTY!", "!ENROUTE!", "!INSERVICE!", "!RETURNING!", "!COMMITTED!", "!SPECIAL!", "!PRIORITY!", "!EMERGENCY!"], id: \.self) {
+                        Text($0.trimmingCharacters(in: CharacterSet(charactersIn: "!")).capitalized).tag($0)
+                    }
+                }
+                if micEStatus == "!EMERGENCY!" {
+                    Text("Emergency alerts every station that hears you. Use it only for a real emergency.").font(.caption).foregroundStyle(.red)
+                }
+            } else {
+                Toggle("Compressed (base-91)", isOn: $compressed)
+            }
+            Picker("Precision", selection: $precision) {
+                ForEach(BeaconPrecision.allCases) { Text($0.label).tag($0.rawValue) }
+            }
+            Picker("Timestamp", selection: $timestamp) {
+                Text("None").tag("none")
+                Text("Hours-minutes-seconds (UTC)").tag("hms")
+                Text("Day-hours-minutes (UTC)").tag("dhm")
+            }
+            Toggle("Include course and speed", isOn: $includeCourseSpeed)
+            Toggle("Include altitude", isOn: $includeAltitude)
+        } header: {
+            Text("Report format")
+        } footer: {
+            Text("Ambiguity hides your exact position (useful at home). DAO adds precision beyond 0.01 minute. Compressed reports fall back to normal ones when they would lose course, speed or altitude.")
         }
     }
 
