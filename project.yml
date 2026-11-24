@@ -57,6 +57,7 @@ targets:
     entitlements:
       path: build/macOS.entitlements
       properties:
+        com.apple.security.personal-information.location: true
         # Gives the app its own data-protection keychain group, so the passcode needs no approval prompt.
         keychain-access-groups:
           - $(AppIdentifierPrefix)com.kc9kko.APRSERJi
