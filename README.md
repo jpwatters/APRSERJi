@@ -2,7 +2,7 @@
 
 Native APRS station map, two-way messaging and beaconing for iPhone, iPad and Mac.
 
-This is KC9KKO's fork of [KJ4DXK's APRSERJi](https://github.com/kj4dxk/APRSERJi). It adds a station list, weather and object display, beaconing with GeniusBeaconing, software modem (RF) support with an IGate, bulletins and ANSRVR announcements, telemetry, map layers, offline maps, WHO-IS callsign lookups, multi-area receive ranges and Keychain passcode storage. Many of these follow KJ4ERJ's [APRSISCE/32](https://aprsisce.wikidot.com/start). The SwiftUI app runs on the same pinned Kotlin [aprs-core](https://github.com/kj4dxk/aprs-core) engine as APRSERJ64 on Windows and APRSERJa on Android, which provides the APRS-IS session, packet decoding, beacon policy, KISS/AGWPE codecs, and SQLite chat and outbox logic. See the [cross-platform audit and Apple architecture](docs/architecture.md), and [docs/APRSERJi.pdf](docs/APRSERJi.pdf) for the full change summary and source listings.
+This is KC9KKO's fork of [KJ4DXK's APRSERJi](https://github.com/kj4dxk/APRSERJi). It adds a station list, weather and object display, beaconing with GeniusBeaconing and SmartBeaconing, radio ports (network TNCs on every device; serial, Bluetooth Classic and Bluetooth LE TNCs on the Mac) with an IGate and digipeater, routed two-way messaging, objects and scheduled bulletins, telemetry, a weather station with Tempest and CWOP support, satellite tracking, map layers, offline maps, WHO-IS callsign lookups, multi-area receive ranges and Keychain passcode storage — including the features of KJ4DXK's Windows [APRSERJ64](https://github.com/kj4dxk/APRSERJ64). Many of these follow KJ4ERJ's [APRSISCE/32](https://aprsisce.wikidot.com/start). The SwiftUI app runs on the same pinned Kotlin [aprs-core](https://github.com/kj4dxk/aprs-core) engine as APRSERJ64 on Windows and APRSERJa on Android, which provides the APRS-IS session, packet decoding, beacon policy, KISS/AGWPE codecs, and SQLite chat and outbox logic. See the [cross-platform audit and Apple architecture](docs/architecture.md), and [docs/APRSERJi.pdf](docs/APRSERJi.pdf) for the full change summary and source listings.
 
 [Windows · APRSERJ64](https://github.com/kj4dxk/APRSERJ64) · [Android · APRSERJa](https://github.com/kj4dxk/APRSERJa)
 
@@ -21,7 +21,8 @@ Once the server verifies a passcode, the app saves it in the system Keychain (en
 - The map fills the window. A floating bar shows the connection status, the number of stations on the map, GPS and Follow buttons, and a settings button that opens the connection, tile, layer and range settings.
 - Station markers show the APRS symbol and are colored by kind: red stations, teal weather stations, orange objects, purple items and yellow watched stations. The **View** settings choose which stations appear.
 - Click a station for an information bubble: time heard, comment, weather or movement, owner, path (APRS-IS or RF), PHG coverage, distance and grid square from you, and **zoom**, **details**, **message** and **who-is** links.
-- **Layers**: paths of travel for other stations, dead reckoning (a dashed line to where a moving station should be now), PHG coverage circles, range rings around you, and NWS warning areas.
+- **Layers**: paths of travel for other stations, dead reckoning (a dashed line to where a moving station should be now), PHG coverage circles, range rings around you, NWS warning areas (storm polygons, plus zone and county outlines for alerts at your location and APRS NWS bulletins), station labels and your nicknames, the route each RF packet took (station → digipeaters → IGate), direction-finding beams, radio horizons for aircraft and balloons, ambiguous positions as shaded cells, multiline and area objects, satellite footprints, and a NEXRAD weather radar overlay with adjustable opacity.
+- The **🔍 menu** on the map: **Go to** a latitude/longitude, grid square or callsign; **Measure** the distance and bearing between two points (set A and B at the map center); **MultiTrack** (up to eight small maps, each following a station); and the radar overlay.
 - **Tiles** defaults to the maintainer's **pdeffenb** server; **OpenStreetMap** uses the public tiles. **Start GPS** plots your position and breadcrumb trail while the app is open.
 
 ### Receive ranges
@@ -38,21 +39,34 @@ A searchable list of everything heard on APRS-IS and RF, filtered by stations, w
 
 ### Messages
 
-Two-way messaging with acknowledgments and retries. **Queue** saves a message even while disconnected; the outbox survives restarts and resumes after a verified connection with the same callsign and SSID. New messages raise a notification and an unread badge; tapping the notification opens the conversation.
+Two-way messaging with acknowledgments and retries, over APRS-IS, the radio, or both. Each conversation has a route — **Best** (the radio when the station was heard there recently, otherwise APRS-IS), **Radio only** or **APRS-IS only** — and an acknowledgment switch. Messages up to 300 characters are split into numbered parts, each acknowledged on its own. **Queue** saves a message even while disconnected; the outbox survives restarts. Messages that weren't acknowledged can be retried, and the location button inserts your position and grid square. New messages raise a notification and an unread badge; tapping the notification opens the conversation. Tools ▸ **Send email** sends through an APRS email gateway (EMAIL-2), splitting long mail into numbered parts.
 
 ### Bulletins
 
-NWS alerts for your location (from api.weather.gov), APRS bulletins (BLN…, NWS-…) heard in range, and ANSRVR announcement groups: join or leave a group, send a CQ to it and read announcements.
+NWS alerts for your location (from api.weather.gov), APRS bulletins (BLN…, NWS-…) heard in range, and ANSRVR announcement groups: join or leave a group, send a CQ to it, ask which groups you're in or list them, see which memberships ANSRVR confirmed, and keep your groups alive by rejoining every six hours.
+
+### Tools
+
+- **Objects, items & bulletins**: publish objects and items (fixed or following your position), with frequency objects (`146.940MHz T107 -060 R25`), lines and areas drawn as AE5PL multilines, kill and revive, and QRU groups. Schedule bulletins (BLN0–BLNZ, with an optional group), and send QRU queries.
+- **Beacon journal** (every report this station sent, why and where) and **Packet monitor** (every packet heard and sent per port, with pause, search and export).
+- **Frequencies** advertised by nearby stations, **Platforms** (the radio or software behind each station, from the aprs.fi device identification database), **RF DX** (stations heard directly on RF, farthest first) and **Station history** (archived tracks with GPX export, altitude and telemetry graphs).
+- **Satellites**: amateur satellite elements from CelesTrak, tracked with SGP4 — live positions, footprints and pass predictions.
+- **Direction finding** bearings, **digital-mode logs** (WSJT-X FT8, JS8Call, JT65-HF stations placed at their grid squares) and **GPX / OpenStreetMap** layer imports.
 
 ### Setup
 
-- **Beacon**: GPS or fixed position, symbol, comment (43 characters) and timing. **Fixed interval** beacons every 1–60 minutes. **GeniusBeaconing** beacons when your position strays from where your last beacon's course and speed predicted, after a distance traveled or a heading change, within minimum and maximum intervals. Beacons carry course, speed and altitude from GPS, go out over a verified APRS-IS login and, with **Also send on RF**, through the software modem with your chosen path. GPS starts automatically when beaconing from GPS.
-- **Radio**: connect to Dire Wolf, UZ7HO Sound Modem or AGWPE over KISS-TCP or AGWPE. Stations heard on RF join the map and lists even without APRS-IS. The optional **IGate** gates RF packets to APRS-IS while the login is verified.
+- **Beacon**: GPS or fixed position, any symbol from both APRS tables (with overlays), comment (60 characters) and timing. **Fixed interval** beacons every 1–60 minutes. **GeniusBeaconing** beacons when your position strays from where your last beacon's course and speed predicted, after a distance traveled or a heading change. **SmartBeaconing** beacons faster with speed and on turns (corner pegging). **Report format** offers Mic-E (with its status), compressed reports, position ambiguity, DAO extra precision and timestamps. Beacons go out over a verified APRS-IS login and on every radio port set to send beacons.
+- **Status and telemetry**: a status report on a schedule, and your own telemetry (packets heard, digipeated and gated, messages, stations, uptime) with channel names, units and scaling.
+- **Radio ports**: Dire Wolf, UZ7HO Sound Modem, AGWPE or a network KISS TNC (KISS, AGWPE or TEXT/TNC2 monitor), found automatically on the network. On the Mac, a workspace of named ports adds serial/USB TNCs (KISS, Kenwood, TNC2), Bluetooth Classic (SPP) and Bluetooth LE KISS TNCs (Mobilinkd TNC3/4, BTECH UV-PRO, ESP32/Nordic UART), and an ISS/ARISS preset. Each port can transmit or listen only, send your beacons, **digipeat** (WIDE1-1 fill-in or wide-area transforms, also onto other ports), and **IGate** both ways: RF to APRS-IS, and APRS-IS messages (plus callsigns, objects or a javAPRSFilter you choose) to RF.
+- **GPS (Mac)**: Location Services, a serial NMEA GPS, network NMEA or gpsd, with a satellite sky plot.
+- **Weather station**: a WeatherFlow **Tempest** (local network broadcasts, or the WeatherFlow cloud with your token), a web address or file (wxnow.txt or JSON), or a Peet Bros Ultimeter on a serial port (Mac). Send your readings as your station or a weather object, and upload them to **CWOP**.
+- **Automatic answers**: standard APRS queries (?APRS?, ?APRSP, ?PING?, ?VER, ?IGATE…), an away message with loop protection, a QRU object server and an information kiosk.
+- **Services**: APRS-IS backup servers, a local APRS-IS server for other programs (Xastir, YAAC…), UDP packet input, a syslog copy, station history retention, daily GPX/CSV track logs, and watched-station alerts (nearby, or gone quiet) with sounds.
 - **Map layers**, **Offline maps** and **Callsign lookup** (below), and **Display & alerts**: metric units, message notifications and, on the Mac, **Reset window size**. The Mac window keeps its size and position across restarts; **Window ▸ Reset Window Size** (⌥⌘0) returns it to its normal size.
 
 ### Offline maps
 
-Every tile the map shows is cached on the device and used whenever the network is unavailable. **Download visible map area** fetches the area on screen for the current and deeper zoom levels (up to 5,000 tiles) from the pdeffenb server. The [OpenStreetMap tile usage policy](https://operations.osmfoundation.org/policies/tiles/) forbids bulk downloads, so preloading is not offered for OpenStreetMap tiles.
+Every tile the map shows is cached on the device and used whenever the network is unavailable, up to a size limit you choose (least recently used tiles go first). **Download visible map area** fetches the area on screen for the current and deeper zoom levels (up to 5,000 tiles) from the pdeffenb server. The [OpenStreetMap tile usage policy](https://operations.osmfoundation.org/policies/tiles/) forbids bulk downloads, so preloading is not offered for OpenStreetMap tiles.
 
 ### WHO-IS callsign lookup
 
@@ -66,7 +80,7 @@ Looks up a station's license holder, class and expiration via callook.info, then
 | UZ7HO Sound Modem | 8100 | 8000 |
 | AGWPE | — | 8000 |
 
-Use host `127.0.0.1` when the modem runs on the same Mac, or the modem computer's address from an iPhone or iPad (iOS asks for local network access). Transmitting on RF and gating require a licensed operator.
+Use host `127.0.0.1` when the modem runs on the same Mac, or the modem computer's address from an iPhone or iPad (iOS asks for local network access). Dire Wolf advertises itself on the network, so **Find network KISS TNCs** fills in its address. Transmitting on RF, digipeating and gating require a licensed operator.
 
 ## Build on a Mac
 
@@ -92,7 +106,7 @@ APRSERJi is available as source code only; there is no App Store or TestFlight b
 
 ## Data sources
 
-APRS-IS servers (default `rotate.aprs2.net`), map tiles from the pdeffenb server or OpenStreetMap, NWS alerts from [api.weather.gov](https://www.weather.gov/documentation/services-web-api), callsign data from [callook.info](https://callook.info), [HamDB](https://hamdb.org) and the [FCC ULS](https://www.fcc.gov/uls/transactions/daily-weekly) amateur database. Your passcode stays in the Keychain; chat history, GPS tracks, map tiles and the FCC database stay on the device.
+APRS-IS servers (default `rotate.aprs2.net`), map tiles from the pdeffenb server or OpenStreetMap, NWS alerts and zone outlines from [api.weather.gov](https://www.weather.gov/documentation/services-web-api), NEXRAD radar tiles from [Iowa Environmental Mesonet](https://mesonet.agron.iastate.edu/ogc/), satellite elements from [CelesTrak](https://celestrak.org), device identification from [aprs-deviceid](https://github.com/aprsorg/aprs-deviceid) (© OH7LZB, CC BY-SA 2.0), Tempest readings from [WeatherFlow](https://weatherflow.github.io/Tempest/api/), callsign data from [callook.info](https://callook.info), [HamDB](https://hamdb.org) and the [FCC ULS](https://www.fcc.gov/uls/transactions/daily-weekly) amateur database. Your passcode stays in the Keychain; chat history, GPS tracks, map tiles and the FCC database stay on the device.
 
 ## License and credits
 
