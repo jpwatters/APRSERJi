@@ -211,9 +211,10 @@ private struct StationMap: View {
     @AppStorage("ref_usHighways") private var refUSHighways = true
     @AppStorage("ref_stateRoads") private var refStateRoads = false
     @AppStorage("ref_countyRoads") private var refCountyRoads = false
-    @AppStorage("refNames") private var refNames = false
     @AppStorage("refSource") private var refSource = ReferenceSource.online.rawValue
     @ObservedObject private var referenceStore = ReferenceStore.shared
+    /** The spot shown in "About this place" (right-click or press and hold on the map). */
+    @State private var aboutPlace: PlaceQuery?
     @AppStorage("layerDF") private var layerDF = true
     @AppStorage("layerHorizons") private var layerHorizons = false
     @AppStorage("layerAmbiguity") private var layerAmbiguity = true
@@ -449,8 +450,10 @@ private struct StationMap: View {
                    tab = 2
                },
                onMessage: { openChat(with: $0) },
-               center: $center, selectedStation: $selectedStation, calloutPoint: $calloutPoint)
+               center: $center, selectedStation: $selectedStation, calloutPoint: $calloutPoint,
+               onAboutPlace: { aboutPlace = PlaceQuery(coordinate: $0) })
             .overlay { stationBubble }
+            .sheet(item: $aboutPlace) { PlaceInfoView(query: $0) }
             .overlay(alignment: .bottomTrailing) {
                 Link("© OpenStreetMap contributors", destination: URL(string: "https://www.openstreetmap.org/copyright")!)
                     .font(.caption2)

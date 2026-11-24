@@ -105,7 +105,7 @@ struct ReferenceSettings: Equatable {
         for kind in ReferenceKind.allCases where (defaults.object(forKey: kind.key) as? Bool) ?? kind.onByDefault {
             settings.kinds.insert(kind)
         }
-        settings.names = defaults.bool(forKey: "refNames")
+        settings.names = false // names are shown by right-clicking or pressing and holding the map instead
         settings.source = ReferenceSource(rawValue: defaults.string(forKey: "refSource") ?? "") ?? .online
         settings.importedRevision = revision
         return settings
@@ -305,9 +305,11 @@ struct ReferenceFeature {
     let kind: ReferenceKind
     let closed: Bool
     let parts: [[Float]]
+    /** The county, state or road name, when the file has one. */
+    let name: String?
     let minLon: Float, minLat: Float, maxLon: Float, maxLat: Float
 
-    init?(kind: ReferenceKind, closed: Bool, parts: [[Float]]) {
+    init?(kind: ReferenceKind, closed: Bool, parts: [[Float]], name: String? = nil) {
         let parts = parts.filter { $0.count >= 4 }
         guard !parts.isEmpty else { return nil }
         var minLon = Float.greatestFiniteMagnitude, minLat = Float.greatestFiniteMagnitude
@@ -319,6 +321,7 @@ struct ReferenceFeature {
             }
         }
         self.kind = kind; self.closed = closed; self.parts = parts
+        self.name = name.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0.trimmingCharacters(in: .whitespaces) }
         self.minLon = minLon; self.minLat = minLat; self.maxLon = maxLon; self.maxLat = maxLat
     }
 }
@@ -431,6 +434,61 @@ final class ReferenceStore: ObservableObject {
 
     private static func cell(_ x: Int, _ y: Int) -> Int { (x + 360) * 1000 + (y + 180) }
 
+    /** State, county and nearby road names at a spot, from the visible imported files (works offline). */
+    func place(at c: CLLocationCoordinate2D, radius: Double = 150) -> PlaceInfo {
+        let visible = Set(files.filter(\.visible).map(\.id))
+        let lon = Float(c.longitude), lat = Float(c.latitude)
+        let metersPerLon = 111_320 * cos(c.latitude * .pi / 180), metersPerLat = 110_574.0
+        let dLon = Float(radius / max(1, metersPerLon)), dLat = Float(radius / metersPerLat)
+        var info = PlaceInfo(source: "your imported boundary and road files")
+        var roads: [(name: String, type: String, distance: Double)] = []
+        lock.lock()
+        for (id, list) in loaded where visible.contains(id) {
+            for f in list {
+                guard lon >= f.minLon - dLon, lon <= f.maxLon + dLon, lat >= f.minLat - dLat, lat <= f.maxLat + dLat else { continue }
+                switch f.kind {
+                case .states, .counties:
+                    guard f.closed, let name = f.name, Self.contains(f, lon, lat) else { continue }
+                    if f.kind == .states { info.state = info.state ?? name } else { info.county = info.county ?? name }
+                default:
+                    guard let name = f.name else { continue }
+                    var best = Double.greatestFiniteMagnitude
+                    for part in f.parts {
+                        var i = 0
+                        while i + 3 < part.count {
+                            let ax = Double(part[i] - lon) * metersPerLon, ay = Double(part[i + 1] - lat) * metersPerLat
+                            let bx = Double(part[i + 2] - lon) * metersPerLon, by = Double(part[i + 3] - lat) * metersPerLat
+                            let dx = bx - ax, dy = by - ay, len = dx * dx + dy * dy
+                            let t = len > 0 ? max(0, min(1, -(ax * dx + ay * dy) / len)) : 0
+                            best = min(best, hypot(ax + t * dx, ay + t * dy))
+                            i += 2
+                        }
+                    }
+                    if best <= radius { roads.append((name, f.kind.routeType ?? "", best)) }
+                }
+            }
+        }
+        lock.unlock()
+        roads.sort { $0.distance < $1.distance }
+        info.roads = PlaceLookup.rankRoads(roads.map { ($0.name, $0.type) })
+        return info
+    }
+
+    /** Even-odd point-in-polygon over all rings. */
+    private static func contains(_ f: ReferenceFeature, _ x: Float, _ y: Float) -> Bool {
+        var inside = false
+        for part in f.parts {
+            let n = part.count / 2
+            var j = n - 1
+            for i in 0..<n {
+                let xi = part[2 * i], yi = part[2 * i + 1], xj = part[2 * j], yj = part[2 * j + 1]
+                if (yi > y) != (yj > y), x < (xj - xi) * (y - yi) / (yj - yi) + xi { inside.toggle() }
+                j = i
+            }
+        }
+        return inside
+    }
+
     private func index(_ id: UUID, _ list: [ReferenceFeature]) {
         var grid: [Int: [Int]] = [:]
         for (i, f) in list.enumerated() {
@@ -519,7 +577,7 @@ final class ReferenceStore: ObservableObject {
     // MARK: Storage format
 
     private static func encode(_ features: [ReferenceFeature]) -> Data {
-        var out = Data("APRF1".utf8)
+        var out = Data("APRF2".utf8)
         func u32(_ v: Int) { var x = UInt32(v).littleEndian; withUnsafeBytes(of: &x) { out.append(contentsOf: $0) } }
         u32(features.count)
         let kinds = ReferenceKind.allCases
@@ -531,12 +589,16 @@ final class ReferenceStore: ObservableObject {
                 u32(part.count)
                 part.withUnsafeBytes { out.append(contentsOf: $0) }
             }
+            let name = Data((f.name ?? "").utf8.prefix(200))
+            u32(name.count)
+            out.append(name)
         }
         return out
     }
 
     private static func decode(_ data: Data) -> [ReferenceFeature]? {
-        guard data.starts(with: Data("APRF1".utf8)) else { return nil }
+        let version2 = data.starts(with: Data("APRF2".utf8))
+        guard version2 || data.starts(with: Data("APRF1".utf8)) else { return nil }
         var offset = 5
         let bytes = [UInt8](data)
         func u32() -> Int? {
@@ -564,7 +626,13 @@ final class ReferenceStore: ObservableObject {
                 offset += n * 4
                 parts.append(part)
             }
-            if let f = ReferenceFeature(kind: kind, closed: closed, parts: parts) { out.append(f) }
+            var name: String?
+            if version2 {
+                guard let n = u32(), offset + n <= bytes.count else { return nil }
+                name = String(decoding: bytes[offset..<(offset + n)], as: UTF8.self)
+                offset += n
+            }
+            if let f = ReferenceFeature(kind: kind, closed: closed, parts: parts, name: name) { out.append(f) }
         }
         return out
     }
@@ -710,6 +778,15 @@ enum ReferenceParser {
         return fallback
     }
 
+    /** A feature's name: "Will County" (NAMELSAD), a road's full name, or NAME. */
+    static func name(_ attributes: [String: String]) -> String? {
+        for key in ["NAMELSAD", "FULLNAME", "NAME", "name", "Name"] {
+            if let value = attributes.first(where: { $0.key.caseInsensitiveCompare(key) == .orderedSame })?.value,
+               !value.trimmingCharacters(in: .whitespaces).isEmpty { return value }
+        }
+        return nil
+    }
+
     static func stateMatches(_ attributes: [String: String], _ fips: String?) -> Bool {
         guard let fips else { return true }
         let code = attributes.first { $0.key.caseInsensitiveCompare("STATEFP") == .orderedSame }?.value
@@ -784,7 +861,7 @@ enum DBF {
             fieldOffset += length
             position += 32
         }
-        let wanted = fields.filter { ["RTTYP", "MTFCC", "STATEFP", "NAME", "FULLNAME"].contains($0.name.uppercased()) }
+        let wanted = fields.filter { ["RTTYP", "MTFCC", "STATEFP", "NAME", "FULLNAME", "NAMELSAD"].contains($0.name.uppercased()) }
         var out: [[String: String]] = []
         out.reserveCapacity(count)
         for r in 0..<count {
@@ -842,7 +919,7 @@ enum Shapefile {
                 parts.append(part)
             }
             let closed = type == 5 || type == 15 || type == 25
-            if let f = ReferenceFeature(kind: featureKind, closed: closed, parts: parts) { out.append(f) }
+            if let f = ReferenceFeature(kind: featureKind, closed: closed, parts: parts, name: ReferenceParser.name(attributes)) { out.append(f) }
         }
         return out
     }
@@ -881,7 +958,7 @@ enum GeoJSON {
                 closed = true
             default: continue
             }
-            if let f = ReferenceFeature(kind: featureKind, closed: closed, parts: parts) { out.append(f) }
+            if let f = ReferenceFeature(kind: featureKind, closed: closed, parts: parts, name: ReferenceParser.name(attributes)) { out.append(f) }
         }
         return out
     }
@@ -937,11 +1014,13 @@ final class KMLReader: NSObject, XMLParserDelegate {
                 if values.count >= 2, let lon = Float(values[0]), let lat = Float(values[1]) { part += [lon, lat] }
             }
             parts.append(part)
+        case "name" where inPlacemark && dataName == nil:
+            if attributes["name"] == nil { attributes["name"] = text.trimmingCharacters(in: .whitespacesAndNewlines) }
         case "Placemark":
             inPlacemark = false
             if ReferenceParser.stateMatches(attributes, onlyState),
                let kind = ReferenceParser.kind(attributes: attributes, fallback: fallback),
-               let f = ReferenceFeature(kind: kind, closed: closed, parts: parts) { out.append(f) }
+               let f = ReferenceFeature(kind: kind, closed: closed, parts: parts, name: ReferenceParser.name(attributes)) { out.append(f) }
         default: break
         }
         text = ""
@@ -978,12 +1057,10 @@ struct ReferenceLayerToggles: View {
     @AppStorage("ref_usHighways") private var usHighways = true
     @AppStorage("ref_stateRoads") private var stateRoads = false
     @AppStorage("ref_countyRoads") private var countyRoads = false
-    @AppStorage("refNames") private var names = false
 
     var body: some View {
         Toggle(ReferenceKind.states.title, isOn: $states)
         Toggle(ReferenceKind.counties.title, isOn: $counties)
-        Toggle("State and county names", isOn: $names)
         Toggle(ReferenceKind.interstates.title, isOn: $interstates)
         Toggle(ReferenceKind.usHighways.title, isOn: $usHighways)
         Toggle(ReferenceKind.stateRoads.title, isOn: $stateRoads)
@@ -1009,7 +1086,7 @@ struct ReferenceLayersSection: View {
         } header: {
             Text("Boundaries and roads")
         } footer: {
-            Text("Online lines come from the U.S. Census Bureau's TIGERweb service and are kept for offline use once seen. Interstates are red, US and state routes orange, and county highways gray; boundaries are purple. Names can be cut off at tile edges.")
+            Text("Online lines come from the U.S. Census Bureau's TIGERweb service and are kept for offline use once seen. Interstates are red, US and state routes orange, and county highways gray; boundaries are purple. To see the state, county, township, town and nearby roads at a spot, right-click the map (Mac) or press and hold it (iPhone and iPad).")
         }
         Section {
             Picker("Import as", selection: $importKind) {
@@ -1065,7 +1142,7 @@ struct ReferenceLayersSection: View {
         } header: {
             Text("Imported boundaries and roads")
         } footer: {
-            Text("Import Census TIGER/Line or cartographic boundary shapefiles (.zip), GeoJSON, or KML/KMZ in latitude/longitude. “Automatic” sorts roads by their route type (RTTYP: Interstate, US, State, County) and boundaries by feature class or file name. Download fetches a state's roads (Interstates, US, state and county highways) and county lines, plus the national state lines, from census.gov — about 5–25 MB per state. Set “Draw from” to Imported files or Both to use them.")
+            Text("Import Census TIGER/Line or cartographic boundary shapefiles (.zip), GeoJSON, or KML/KMZ in latitude/longitude. “Automatic” sorts roads by their route type (RTTYP: Interstate, US, State, County) and boundaries by feature class or file name. Download fetches a state's roads (Interstates, US, state and county highways) and county lines, plus the national state lines, from census.gov — about 5–25 MB per state. Set “Draw from” to Imported files or Both to use them. Imported files also name the county, state and roads when you look up a spot offline; files imported before this version need importing again for names.")
         }
 
     }

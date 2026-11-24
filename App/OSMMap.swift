@@ -225,6 +225,8 @@ struct OSMMap: NativeMapRepresentable {
     @Binding var selectedStation: String?
     /** Where the selected station's marker is on screen (top-left origin), for positioning its bubble. */
     @Binding var calloutPoint: CGPoint?
+    /** Called with the spot the user right-clicked (Mac) or pressed and held (iPhone, iPad). */
+    var onAboutPlace: ((CLLocationCoordinate2D) -> Void)? = nil
 
     #if os(macOS)
     func makeNSView(context: Context) -> MKMapView { makeMap(context.coordinator) }
@@ -246,6 +248,15 @@ struct OSMMap: NativeMapRepresentable {
         map.setRegion(MKCoordinateRegion(center: center, latitudinalMeters: 120_000, longitudinalMeters: 120_000),
                       animated: false)
         map.delegate = coordinator
+        #if os(macOS)
+        let click = NSClickGestureRecognizer(target: coordinator, action: #selector(Coordinator.aboutPlace(_:)))
+        click.buttonMask = 0x2
+        map.addGestureRecognizer(click)
+        #else
+        let press = UILongPressGestureRecognizer(target: coordinator, action: #selector(Coordinator.aboutPlace(_:)))
+        press.minimumPressDuration = 0.6
+        map.addGestureRecognizer(press)
+        #endif
         coordinator.update(map, with: self)
         return map
     }
@@ -499,6 +510,18 @@ struct OSMMap: NativeMapRepresentable {
             let lon2 = lon1 + atan2(sin(b) * sin(d) * cos(lat1), cos(d) - sin(lat1) * sin(lat2))
             return CLLocationCoordinate2D(latitude: lat2 * 180 / .pi, longitude: lon2 * 180 / .pi)
         }
+
+        #if os(macOS)
+        @objc func aboutPlace(_ gesture: NSClickGestureRecognizer) {
+            guard let map = gesture.view as? MKMapView, let handler = parent.onAboutPlace else { return }
+            handler(map.convert(gesture.location(in: map), toCoordinateFrom: map))
+        }
+        #else
+        @objc func aboutPlace(_ gesture: UILongPressGestureRecognizer) {
+            guard gesture.state == .began, let map = gesture.view as? MKMapView, let handler = parent.onAboutPlace else { return }
+            handler(map.convert(gesture.location(in: map), toCoordinateFrom: map))
+        }
+        #endif
 
         /** Boundaries and roads: the Census Bureau's online layers and imported files, just above the base map. */
         private func updateReference(on map: MKMapView) {
