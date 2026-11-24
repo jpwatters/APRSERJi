@@ -16,7 +16,7 @@ struct SetupView: View {
     @AppStorage("ringSpacingMiles") private var ringSpacing = 10.0
     @AppStorage("ringCount") private var ringCount = 4
     @AppStorage("nwsEnabled") private var nws = true
-    @AppStorage("layerLabels") private var labels: StationLabels = .off
+    @AppStorage("layerLabels") private var labels: StationLabels = .callsign
     @AppStorage("layerDF") private var df = true
     @AppStorage("layerHorizons") private var horizons = false
     @AppStorage("layerAmbiguity") private var ambiguity = true

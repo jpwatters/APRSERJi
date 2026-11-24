@@ -203,7 +203,7 @@ private struct StationMap: View {
     @AppStorage("viewMaxMiles") private var viewMaxMiles = 0
     @AppStorage("viewWatchList") private var viewWatchList = ""
     @AppStorage("viewOnly") private var viewOnly = ""
-    @AppStorage("layerLabels") private var layerLabels: StationLabels = .off
+    @AppStorage("layerLabels") private var layerLabels: StationLabels = .callsign
     @AppStorage("layerDF") private var layerDF = true
     @AppStorage("layerHorizons") private var layerHorizons = false
     @AppStorage("layerAmbiguity") private var layerAmbiguity = true
@@ -589,6 +589,10 @@ private struct StationMap: View {
                     Toggle("PHG coverage", isOn: $layerCoverage)
                     Toggle("Range rings", isOn: $layerRings)
                     Toggle("NWS warnings", isOn: $nwsEnabled)
+                    Divider()
+                    Picker("Station labels", selection: $layerLabels) {
+                        ForEach(StationLabels.allCases) { Text($0.rawValue).tag($0) }
+                    }
                 } label: {
                     Label("Layers", systemImage: "square.3.layers.3d")
                 }

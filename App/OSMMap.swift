@@ -132,7 +132,7 @@ struct MapLayers {
     var alerts: [NWSAlert] = []
     /** Watched callsign patterns, drawn in yellow and never hidden by MapKit's decluttering. */
     var watched: [String] = []
-    var labels: StationLabels = .off
+    var labels: StationLabels = .callsign
     /** Your names for stations, shown instead of the callsign. */
     var nicknames: [String: String] = [:]
     /** Draw the route each RF packet took (station → digipeaters → IGate) for these stations. */
@@ -256,6 +256,8 @@ struct OSMMap: NativeMapRepresentable {
         private var focusID: UUID?
         private weak var mapView: MKMapView?
         private var previousSelection: String?
+        /** The label mode the marker views were last drawn with. */
+        private var appliedLabels: StationLabels?
         private var trackOverlays: [String: (count: Int, line: StyledPolyline)] = [:]
         private var coverageOverlays: [String: (key: String, circle: StyledCircle)] = [:]
         private var reckoningOverlays: [String: (key: String, line: StyledPolyline)] = [:]
@@ -291,6 +293,13 @@ struct OSMMap: NativeMapRepresentable {
             }
             mapView = map
             updateStations(on: map)
+            if appliedLabels != parent.layers.labels {
+                appliedLabels = parent.layers.labels
+                for case let marker as StationAnnotation in map.annotations {
+                    guard let view = map.view(for: marker) as? MKMarkerAnnotationView else { continue }
+                    applyLabels(to: view)
+                }
+            }
             updateTrack(on: map)
             updateLayers(on: map)
             // Closing the bubble clears the selection in SwiftUI; mirror that on the map. Only act on a change
@@ -762,6 +771,12 @@ struct OSMMap: NativeMapRepresentable {
             return MKOverlayRenderer(overlay: overlay)
         }
 
+        /** Shows the callsign (and, for "Callsign and details", the summary line) under a station marker. */
+        private func applyLabels(to view: MKMarkerAnnotationView) {
+            view.titleVisibility = parent.layers.labels == .off ? .hidden : .visible
+            view.subtitleVisibility = parent.layers.labels == .full ? .visible : .hidden
+        }
+
         func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
             if let station = annotation as? StationAnnotation {
                 let view = mapView.dequeueReusableAnnotationView(withIdentifier: "station") as? MKMarkerAnnotationView
@@ -771,8 +786,7 @@ struct OSMMap: NativeMapRepresentable {
                 view.canShowCallout = false
                 view.glyphImage = makeGlyph(station.image)
                 view.displayPriority = station.watched ? .required : .defaultHigh
-                view.titleVisibility = parent.layers.labels == .off ? .hidden : .visible
-                view.subtitleVisibility = parent.layers.labels == .full ? .visible : .hidden
+                applyLabels(to: view)
                 switch station.watched ? "watched" : station.kind {
                 case "watched": view.markerTintColor = .systemYellow
                 case "weather": view.markerTintColor = .systemTeal
