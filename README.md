@@ -14,6 +14,143 @@ This is KC9KKO's fork of [KJ4DXK's APRSERJi](https://github.com/kj4dxk/APRSERJi)
 
 Once the server verifies a passcode, the app saves it in the system Keychain (encrypted, one entry per base callsign, never re-prompted on a signed Mac build) and uses it on later connections. Type a new passcode to replace it after it verifies, or select **Forget** to remove it. With a verified passcode saved, the app connects by itself 15 seconds after launch: click the countdown to pause or resume it, **Connect now** to skip the wait, or **Cancel** to stay offline.
 
+## A tour of APRSERJi
+
+Screenshots from the Mac app, with a short note on what each screen does. The iPhone and iPad apps have the same screens.
+
+### Map
+
+The live APRS picture around you, here across Northern Illinois. Markers show each station's APRS symbol, colored by kind: stations, weather, objects, items and watched stations. Green circles show PHG coverage, and the dashed rings are range rings around your position. Click a station for its information bubble, with links to zoom, details, message and WHO-IS.
+
+<img src="docs/images/01-map.jpg" width="760" alt="APRSERJi map showing Northern Illinois">
+
+### Map settings
+
+The settings button on the map bar opens the connection and passcode, tile source, map layers, receive ranges around your GPS fix, last fix and map center, the **View** filter, and **Always show**. Always show lists watched callsigns that are fetched from anywhere and marked in yellow.
+
+<img src="docs/images/02-map-settings.jpg" width="560" alt="Map settings panel">
+
+### Stations
+
+Everything heard on APRS-IS and RF, with distance, direction, comment and the time it was last heard. Search by callsign or comment, show stations, weather or objects only, and sort by distance, last heard or callsign. Open a station for its position, grid, weather, telemetry, path and PHG coverage, or to send it a message.
+
+<img src="docs/images/03-stations.jpg" width="760" alt="Stations list">
+
+### Messages
+
+Two-way APRS messaging with acknowledgments and retries. Each conversation can go by the best route, radio only or APRS-IS only. **Queue** saves a message even while you're offline, long messages are split into numbered parts, and the outbox survives restarts.
+
+<img src="docs/images/04-messages.jpg" width="760" alt="Messages">
+
+### Bulletins
+
+NWS warnings for your location from api.weather.gov, APRS bulletins heard in your receive range, and ANSRVR announcement groups. You can join a group, ask which groups you're in, and keep your groups alive by rejoining every six hours.
+
+<img src="docs/images/05-bulletins.jpg" width="760" alt="Bulletins">
+
+### Setup
+
+Everything about your own station, on one scrolling page:
+
+1. **Connection and beacon**: callsign, server and passcode (kept in the Keychain), then beacon on/off with its status, position source and grid, symbol, comment and timing, and the report format (Mic-E, compressed, precision, timestamp, course/speed, altitude).
+2. **Status and telemetry**: a scheduled status report, and your own telemetry channels (packets heard, digipeated and gated, messages) with names, units and scaling.
+3. **Radio ports, IGate, GPS and weather station**: add a port or find network KISS TNCs, choose what gets gated to RF, pick the GPS source (Location Services, serial NMEA, network NMEA or gpsd), and choose a weather station source such as a Tempest.
+4. **Weather reports, automatic answers and services**: send your weather as your station or an object and upload it to CWOP; answer APRS queries, send an away message, run a QRU object server or an information kiosk; set backup APRS-IS servers and station-history retention; and run a local APRS-IS server, UDP input or a syslog copy for other programs.
+5. **Map layers and offline maps**: paths, dead reckoning, PHG, NWS areas, labels, RF packet paths, DF beams, radio horizons, ambiguity shading, multiline objects, weather radar and range rings, and the offline tile cache with area download.
+6. **Track logs, alerts, callsign lookup and display**: daily GPX/CSV track logs, watched-station alerts with sounds, the FCC license database for WHO-IS, metric units, message notifications and the reset-window button.
+
+<img src="docs/images/06-setup-1.jpg" width="760" alt="Setup: connection, beacon, position, report and report format">
+<img src="docs/images/06-setup-2.jpg" width="760" alt="Setup: status and telemetry">
+<img src="docs/images/06-setup-3.jpg" width="760" alt="Setup: radio ports, IGate, GPS and weather station">
+<img src="docs/images/06-setup-4.jpg" width="760" alt="Setup: weather reports, automatic answers, APRS-IS and history, services">
+<img src="docs/images/06-setup-5.jpg" width="760" alt="Setup: map layers and offline maps">
+<img src="docs/images/06-setup-6.jpg" width="760" alt="Setup: track logs, watched-station alerts, callsign lookup, display and alerts">
+
+### Tools
+
+The extra tools, grouped by **Your station** (objects and bulletins, beacon journal, packet monitor, email), **Stations** (frequencies, platforms, RF DX, station history, MultiTrack) and **Map** (satellites, direction finding, digital-mode logs, imported layers).
+
+<img src="docs/images/07-tools.jpg" width="760" alt="Tools">
+
+### Objects, items and bulletins
+
+Publish objects and items for things that aren't stations, such as a net control, an aid station, an event or a repeater frequency. Killing one tells every station to remove it. You can also schedule bulletins (BLN0–BLN9, or a group such as BLN1CLUB) and send a QRU query for the nearest objects in a group (INFO, REPEATR, HAMFEST…).
+
+<img src="docs/images/08-tools-objects.jpg" width="760" alt="Objects, items and bulletins">
+
+### Beacon journal
+
+Every report this station sent, with what triggered it (initial, interval, connected, distance or turn), the route it took (APRS-IS or a radio port), and the exact packet.
+
+<img src="docs/images/09-tools-beacon-journal.jpg" width="760" alt="Beacon journal">
+
+### Packet monitor
+
+Every raw packet received and sent, labeled by port and direction. Filter by port, show received, sent or both, search by callsign or text, pause the live view, and export the log.
+
+<img src="docs/images/10-tools-packet-monitor.jpg" width="760" alt="Packet monitor">
+
+### Send email
+
+Sends an email over APRS through the EMAIL-2 gateway. Messages up to 300 characters are split into numbered parts, and replies come back as APRS messages.
+
+<img src="docs/images/11-tools-send-email.jpg" width="760" alt="Send email">
+
+### Frequencies
+
+Voice frequencies that nearby stations and repeater objects advertise in the standard APRS format, with tone, callsign and distance. A second list catches comments that mention a frequency in another way, such as DMR, D-STAR and C4FM gateways.
+
+<img src="docs/images/12-stations-frequencies.jpg" width="760" alt="Frequencies">
+
+### Platforms (radios and software)
+
+Counts of the radios, trackers, TNCs and programs behind the stations heard, such as Direwolf, Kenwood, Yaesu, APRSdroid and WX3in1. They're identified from each packet's destination call or Mic-E type with the aprs.fi device identification database. Expand a platform to see its stations.
+
+<img src="docs/images/13-stations-platforms.jpg" width="760" alt="Platforms">
+
+### RF DX
+
+Stations heard directly on a radio port, with no digipeater in the path, listed farthest first. This shows how far your own antenna and TNC really hear. The list stays empty until a radio port is connected.
+
+<img src="docs/images/14-stations-rf-dx.jpg" width="760" alt="RF DX">
+
+### Station history and telemetry graphs
+
+Every station and object kept in the on-device history. Pick one to see its archived track on a map, altitude and telemetry graphs over time, and a GPX export.
+
+<img src="docs/images/15-stations-history.jpg" width="760" alt="Station history and telemetry graphs">
+
+### MultiTrack
+
+Follow up to eight stations at once, each in its own small map that stays centered on it, with optional trails. It's useful for a road rally, a balloon chase or a group of mobiles.
+
+<img src="docs/images/16-stations-multitrack.jpg" width="560" alt="MultiTrack">
+
+### Satellites
+
+Downloads the amateur satellite elements from CelesTrak and tracks them with SGP4. Satellites you turn on are drawn on the map with their footprint, green while above your horizon. **Passes** lists upcoming passes with the time, maximum elevation and rise and set directions. The ISS APRS digipeater is on 145.825 MHz.
+
+<img src="docs/images/17-map-satellites-1.jpg" width="760" alt="Satellites list">
+<img src="docs/images/17-map-satellites-2.jpg" width="760" alt="Satellite pass predictions">
+
+### Direction finding
+
+Take bearings on a signal from two or three places; where the lines cross is the transmitter. When the Direction finding layer is on, DF reports from other stations (DFS/BRG/NRQ) are drawn too.
+
+<img src="docs/images/18-map-direction-finding.jpg" width="760" alt="Direction finding">
+
+### Digital-mode logs (FT8, JS8Call, JT65)
+
+Import a WSJT-X `ALL.TXT`, a JS8Call `DIRECTED.TXT`/`ALL.TXT` or a JT65-HF log. Every station that sent a grid square is placed at it, so HF digital activity shares the map with APRS.
+
+<img src="docs/images/19-map-digital-logs.jpg" width="760" alt="Digital-mode logs">
+
+### Imported GPX and OSM layers
+
+Import GPX tracks, routes and waypoints, or OpenStreetMap XML ways (trails, roads, boundaries). They're drawn over the map and kept until you remove them, which suits event routes or served-agency locations.
+
+<img src="docs/images/20-map-imported-layers.jpg" width="760" alt="Imported GPX and OSM layers">
+
 ## Features
 
 ### Map
