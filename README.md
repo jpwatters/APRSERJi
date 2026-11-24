@@ -1,5 +1,7 @@
 # APRSERJi
 
+> **Using Windows?** [Get the latest APRSERJ64 release](https://github.com/kj4dxk/APRSERJ64/releases/latest) for the Windows edition with multi-port radio support, GPS beaconing, and offline maps.
+
 Native APRS station map, two-way messaging and beaconing for iPhone, iPad and Mac.
 
 This is KC9KKO's fork of [KJ4DXK's APRSERJi](https://github.com/kj4dxk/APRSERJi). It adds a station list, weather and object display, beaconing with GeniusBeaconing, software modem (RF) support with an IGate, bulletins and ANSRVR announcements, telemetry, map layers, offline maps, WHO-IS callsign lookups, multi-area receive ranges and Keychain passcode storage. Many of these follow KJ4ERJ's [APRSISCE/32](https://aprsisce.wikidot.com/start). The SwiftUI app runs on the same pinned Kotlin [aprs-core](https://github.com/kj4dxk/aprs-core) engine as APRSERJ64 on Windows and APRSERJa on Android, which provides the APRS-IS session, packet decoding, beacon policy, KISS/AGWPE codecs, and SQLite chat and outbox logic. See the [cross-platform audit and Apple architecture](docs/architecture.md), and [docs/APRSERJi.pdf](docs/APRSERJi.pdf) for the full change summary and source listings.
