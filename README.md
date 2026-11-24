@@ -159,6 +159,7 @@ Import GPX tracks, routes and waypoints, or OpenStreetMap XML ways (trails, road
 - Station markers show the APRS symbol and are colored by kind: red stations, teal weather stations, orange objects, purple items and yellow watched stations. The **View** settings choose which stations appear.
 - Click a station for an information bubble: time heard, comment, weather or movement, owner, path (APRS-IS or RF), PHG coverage, distance and grid square from you, and **zoom**, **details**, **message** and **who-is** links.
 - **Layers**: paths of travel for other stations, dead reckoning (a dashed line to where a moving station should be now), PHG coverage circles, range rings around you, NWS warning areas (storm polygons, plus zone and county outlines for alerts at your location and APRS NWS bulletins), station labels and your nicknames, the route each RF packet took (station → digipeaters → IGate), direction-finding beams, radio horizons for aircraft and balloons, ambiguous positions as shaded cells, multiline and area objects, satellite footprints, and a NEXRAD weather radar overlay with adjustable opacity.
+- **Boundaries and roads** (also in the **Layers** menu): state and county boundaries with optional names, Interstates, US highways, state roads and county roads — see below.
 - The **🔍 menu** on the map: **Go to** a latitude/longitude, grid square or callsign; **Measure** the distance and bearing between two points (set A and B at the map center); **MultiTrack** (up to eight small maps, each following a station); and the radar overlay.
 - **Tiles** defaults to the maintainer's **pdeffenb** server; **OpenStreetMap** uses the public tiles. **Start GPS** plots your position and breadcrumb trail while the app is open.
 
@@ -200,6 +201,10 @@ NWS alerts for your location (from api.weather.gov), APRS bulletins (BLN…, NWS
 - **Automatic answers**: standard APRS queries (?APRS?, ?APRSP, ?PING?, ?VER, ?IGATE…), an away message with loop protection, a QRU object server and an information kiosk.
 - **Services**: APRS-IS backup servers, a local APRS-IS server for other programs (Xastir, YAAC…), UDP packet input, a syslog copy, station history retention, daily GPX/CSV track logs, and watched-station alerts (nearby, or gone quiet) with sounds.
 - **Map layers**, **Offline maps** and **Callsign lookup** (below), and **Display & alerts**: metric units, message notifications and, on the Mac, **Reset window size**. The Mac window keeps its size and position across restarts; **Window ▸ Reset Window Size** (⌥⌘0) returns it to its normal size.
+
+### Boundaries and roads
+
+State and county boundaries (purple, with optional state and county names), Interstates (red), US highways and state roads (orange, with route shields) and county highways (gray), each turned on separately in the map's **Layers** menu or in Setup. Online, they come from the U.S. Census Bureau's [TIGERweb](https://tigerweb.geo.census.gov/) map service and are cached on the device once seen. For offline use, **Setup ▸ Imported boundaries and roads** imports Census TIGER/Line or cartographic boundary shapefiles (.zip), GeoJSON or KML/KMZ files, sorting roads by their TIGER route type (Interstate, US, State, County) and boundaries by feature class or file name — or **Download** fetches a state's roads and county lines and the national state lines from census.gov (about 5–25 MB per state). **Draw from** chooses online, imported or both.
 
 ### Offline maps
 
@@ -243,7 +248,7 @@ APRSERJi is available as source code only; there is no App Store or TestFlight b
 
 ## Data sources
 
-APRS-IS servers (default `rotate.aprs2.net`), map tiles from the pdeffenb server or OpenStreetMap, NWS alerts and zone outlines from [api.weather.gov](https://www.weather.gov/documentation/services-web-api), NEXRAD radar tiles from [Iowa Environmental Mesonet](https://mesonet.agron.iastate.edu/ogc/), satellite elements from [CelesTrak](https://celestrak.org), device identification from [aprs-deviceid](https://github.com/aprsorg/aprs-deviceid) (© OH7LZB, CC BY-SA 2.0), Tempest readings from [WeatherFlow](https://weatherflow.github.io/Tempest/api/), callsign data from [callook.info](https://callook.info), [HamDB](https://hamdb.org) and the [FCC ULS](https://www.fcc.gov/uls/transactions/daily-weekly) amateur database. Your passcode stays in the Keychain; chat history, GPS tracks, map tiles and the FCC database stay on the device.
+APRS-IS servers (default `rotate.aprs2.net`), map tiles from the pdeffenb server or OpenStreetMap, NWS alerts and zone outlines from [api.weather.gov](https://www.weather.gov/documentation/services-web-api), NEXRAD radar tiles from [Iowa Environmental Mesonet](https://mesonet.agron.iastate.edu/ogc/), state and county boundaries and roads from the U.S. Census Bureau ([TIGERweb](https://tigerweb.geo.census.gov/) and [TIGER/Line](https://www.census.gov/geographies/mapping-files/time-series/geo/tiger-line-file.html) files), satellite elements from [CelesTrak](https://celestrak.org), device identification from [aprs-deviceid](https://github.com/aprsorg/aprs-deviceid) (© OH7LZB, CC BY-SA 2.0), Tempest readings from [WeatherFlow](https://weatherflow.github.io/Tempest/api/), callsign data from [callook.info](https://callook.info), [HamDB](https://hamdb.org) and the [FCC ULS](https://www.fcc.gov/uls/transactions/daily-weekly) amateur database. Your passcode stays in the Keychain; chat history, GPS tracks, map tiles and the FCC database stay on the device.
 
 ## License and credits
 

@@ -67,6 +67,7 @@ struct SetupView: View {
                 } footer: {
                     Text("Dead reckoning draws a dashed line to where a moving station should be now, from its last course and speed (up to 10 minutes). Range rings are centered on your GPS fix, or the map center when GPS is off. Weather radar is the NEXRAD composite from Iowa Environmental Mesonet (USA).")
                 }
+                ReferenceLayersSection()
                 OfflineMapsSection()
                 TrackLogSection()
                 WatchAlertSection()

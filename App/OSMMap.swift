@@ -143,6 +143,8 @@ struct MapLayers {
     var showShapes = true
     /** Weather radar overlay opacity (0 hides it). */
     var radarOpacity: Double = 0
+    /** State and county boundaries and roads, online and imported. */
+    var reference = ReferenceSettings()
     var markers: [MapMarker] = []
     var shapes: [MapShape] = []
     var circles: [MapCircle] = []
@@ -271,6 +273,8 @@ struct OSMMap: NativeMapRepresentable {
         private let extraShapeGroup = OverlayGroup()
         private let extraCircleGroup = OverlayGroup()
         private var radar: RadarTiles?
+        /** Boundary and road layers in drawing order (boundaries, roads, imported), with what each was made from. */
+        private var referenceLayers: [(signature: String, overlay: MKTileOverlay)] = []
         private var radarStamp = 0
         private var extraMarkers: [String: ExtraAnnotation] = [:]
         private var trail: MKPolyline?
@@ -292,6 +296,7 @@ struct OSMMap: NativeMapRepresentable {
                 source = parent.preset
             }
             mapView = map
+            updateReference(on: map)
             updateStations(on: map)
             if appliedLabels != parent.layers.labels {
                 appliedLabels = parent.layers.labels
@@ -493,6 +498,41 @@ struct OSMMap: NativeMapRepresentable {
             let lat2 = asin(sin(lat1) * cos(d) + cos(lat1) * sin(d) * cos(b))
             let lon2 = lon1 + atan2(sin(b) * sin(d) * cos(lat1), cos(d) - sin(lat1) * sin(lat2))
             return CLLocationCoordinate2D(latitude: lat2 * 180 / .pi, longitude: lon2 * 180 / .pi)
+        }
+
+        /** Boundaries and roads: the Census Bureau's online layers and imported files, just above the base map. */
+        private func updateReference(on map: MKMapView) {
+            let settings = parent.layers.reference
+            var wanted: [(signature: String, make: () -> MKTileOverlay)] = []
+            if settings.drawsOnline {
+                let states = settings.kinds.contains(.states), counties = settings.kinds.contains(.counties)
+                if states || counties {
+                    let content = TigerTiles.Content.boundaries(states: states, counties: counties, names: settings.names)
+                    wanted.append(("online \(content)", { TigerTiles(content: content) }))
+                }
+                let roads = settings.kinds.filter(\.isRoad)
+                if !roads.isEmpty {
+                    let content = TigerTiles.Content.roads(roads)
+                    wanted.append(("online roads " + roads.map(\.rawValue).sorted().joined(separator: ","), { TigerTiles(content: content) }))
+                }
+            }
+            let visible = Set(ReferenceStore.shared.files.filter(\.visible).map(\.id))
+            if settings.drawsImported, !visible.isEmpty {
+                let kinds = settings.kinds
+                let signature = "imported " + kinds.map(\.rawValue).sorted().joined(separator: ",")
+                    + " \(settings.importedRevision) " + visible.map(\.uuidString).sorted().joined(separator: ",")
+                wanted.append((signature, { ImportedReferenceTiles(kinds: kinds, visible: visible) }))
+            }
+            guard wanted.map(\.signature) != referenceLayers.map(\.signature) else { return }
+            for layer in referenceLayers { map.removeOverlay(layer.overlay) }
+            referenceLayers = []
+            var below: MKOverlay? = tiles
+            for want in wanted {
+                let overlay = want.make()
+                if let below { map.insertOverlay(overlay, above: below) } else { map.addOverlay(overlay, level: .aboveLabels) }
+                referenceLayers.append((want.signature, overlay))
+                below = overlay
+            }
         }
 
         /** Packet paths, DF beams, radio horizons, ambiguity cells, shapes, radar, and the app's own markers and lines. */

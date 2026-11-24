@@ -204,6 +204,16 @@ private struct StationMap: View {
     @AppStorage("viewWatchList") private var viewWatchList = ""
     @AppStorage("viewOnly") private var viewOnly = ""
     @AppStorage("layerLabels") private var layerLabels: StationLabels = .callsign
+    // Boundary and road switches (read through ReferenceSettings; declared here so the map redraws when they change).
+    @AppStorage("ref_states") private var refStates = true
+    @AppStorage("ref_counties") private var refCounties = true
+    @AppStorage("ref_interstates") private var refInterstates = true
+    @AppStorage("ref_usHighways") private var refUSHighways = true
+    @AppStorage("ref_stateRoads") private var refStateRoads = false
+    @AppStorage("ref_countyRoads") private var refCountyRoads = false
+    @AppStorage("refNames") private var refNames = false
+    @AppStorage("refSource") private var refSource = ReferenceSource.online.rawValue
+    @ObservedObject private var referenceStore = ReferenceStore.shared
     @AppStorage("layerDF") private var layerDF = true
     @AppStorage("layerHorizons") private var layerHorizons = false
     @AppStorage("layerAmbiguity") private var layerAmbiguity = true
@@ -593,6 +603,8 @@ private struct StationMap: View {
                     Picker("Station labels", selection: $layerLabels) {
                         ForEach(StationLabels.allCases) { Text($0.rawValue).tag($0) }
                     }
+                    Divider()
+                    ReferenceLayerToggles()
                 } label: {
                     Label("Layers", systemImage: "square.3.layers.3d")
                 }
@@ -633,6 +645,7 @@ private struct StationMap: View {
         layers.showAmbiguity = layerAmbiguity
         layers.showShapes = layerShapes
         layers.radarOpacity = radarOpacity
+        layers.reference = ReferenceSettings.load(revision: referenceStore.revision)
         extras.apply(to: &layers, metric: UserDefaults.standard.bool(forKey: "useMetric"))
         return layers
     }
