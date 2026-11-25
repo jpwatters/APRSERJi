@@ -49,6 +49,13 @@ enum MapViewport {
 }
 
 /** A request to center the map on a station; a new id re-triggers even for the same station. */
+/** Zoom the map in (positive) or out (negative) by whole steps, once. */
+struct MapZoom: Equatable {
+    let id = UUID()
+    let steps: Int
+    static func == (a: MapZoom, b: MapZoom) -> Bool { a.id == b.id }
+}
+
 struct MapFocus: Equatable {
     let id = UUID()
     let callsign: String
@@ -227,6 +234,8 @@ struct OSMMap: NativeMapRepresentable {
     @Binding var calloutPoint: CGPoint?
     /** Called with the spot the user right-clicked (Mac) or pressed and held (iPhone, iPad). */
     var onAboutPlace: ((CLLocationCoordinate2D) -> Void)? = nil
+    /** A one-shot zoom request (from the CAT command MP). */
+    var zoom: MapZoom? = nil
 
     #if os(macOS)
     func makeNSView(context: Context) -> MKMapView { makeMap(context.coordinator) }
@@ -274,6 +283,7 @@ struct OSMMap: NativeMapRepresentable {
         private var tiles: OSMTiles?
         private var markers: [String: StationAnnotation] = [:]
         private var focusID: UUID?
+        private var zoomID: UUID?
         private weak var mapView: MKMapView?
         private var previousSelection: String?
         /** The label mode the marker views were last drawn with. */
@@ -334,6 +344,14 @@ struct OSMMap: NativeMapRepresentable {
             }
             previousSelection = parent.selectedStation
             updateCalloutPoint(map)
+            if let zoom = parent.zoom, zoom.id != zoomID {
+                zoomID = zoom.id
+                let factor = pow(2, -Double(zoom.steps))
+                let r = map.region
+                let span = MKCoordinateSpan(latitudeDelta: min(170, max(0.0005, r.span.latitudeDelta * factor)),
+                                            longitudeDelta: min(350, max(0.0005, r.span.longitudeDelta * factor)))
+                map.setRegion(MKCoordinateRegion(center: r.center, span: span), animated: true)
+            }
             if let focus = parent.focus, focus.id != focusID {
                 focusID = focus.id
                 if let meters = focus.meters {

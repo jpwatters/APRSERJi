@@ -202,6 +202,13 @@ private struct StationMap: View {
     @AppStorage("viewMaxAgeMinutes") private var viewMaxAgeMinutes = 0
     @AppStorage("viewMaxMiles") private var viewMaxMiles = 0
     @AppStorage("viewWatchList") private var viewWatchList = ""
+    /** The station a CAT program asked to track (MT=CALL); the map follows it. */
+    @State private var trackedCall: String?
+    @State private var trackedCoordinate: CLLocationCoordinate2D?
+    /** One-shot zoom steps from a CAT program (MP=01 / MP=-01). */
+    @State private var mapZoom: MapZoom?
+    /** A short note about a CAT command, shown on the map for a few seconds. */
+    @State private var remoteNote: String?
     @AppStorage("viewOnly") private var viewOnly = ""
     @AppStorage("layerLabels") private var layerLabels: StationLabels = .callsign
     // Boundary and road switches (read through ReferenceSettings; declared here so the map redraws when they change).
@@ -324,8 +331,9 @@ private struct StationMap: View {
                     core.setStation(callsign: station)
                     #if os(macOS)
                     ExternalGps.shared.tick(core: core, gps: gps)
-                    VirtualRig.shared.apply()
                     #endif
+                    VirtualRig.shared.apply()
+                    followTrackedStation()
                     let here = gps.latest?.coordinate ?? BeaconSync.fixedCoordinate()
                     core.setOwnPosition(latitude: here?.latitude ?? 0, longitude: here?.longitude ?? 0,
                                         altitudeMeters: gps.latest.map { $0.verticalAccuracy >= 0 ? $0.altitude : .nan } ?? .nan,
@@ -344,7 +352,7 @@ private struct StationMap: View {
                     tick += 1
                     warnings.refreshIfNeeded(enabled: nwsEnabled, location: origin.coordinate,
                                              reachMeters: Double(max(rangeCenter, rangeGPS)) * 1609.344)
-                    model.updateCoverage(coverageAreas, watch: WatchList.parse(viewWatchList))
+                    model.updateCoverage(coverageAreas, watch: watchCalls)
                     if let due = autoConnectAt, Date() >= due {
                         autoConnectAt = nil
                         if !model.running {
@@ -359,7 +367,15 @@ private struct StationMap: View {
                     }
                 }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .aprserjiRemote)) { note in
+                if let action = note.object as? RemoteAction { handleRemote(action, core: core) }
+            }
+            .onChange(of: followGPS) { _, following in
+                if following, trackedCall != nil { stopTracking() }
+            }
+            .onAppear { keepScreenOn(scenePhase == .active) }
             .onChange(of: scenePhase) { _, phase in
+                keepScreenOn(phase == .active)
                 if phase == .background { gps.stop() }
                 if phase == .active { startBeaconGPSIfNeeded() }
                 if phase == .active && tab == 1 { clearUnread() }
@@ -452,7 +468,7 @@ private struct StationMap: View {
                },
                onMessage: { openChat(with: $0) },
                center: $center, selectedStation: $selectedStation, calloutPoint: $calloutPoint,
-               onAboutPlace: { aboutPlace = PlaceQuery(coordinate: $0) })
+               onAboutPlace: { aboutPlace = PlaceQuery(coordinate: $0) }, zoom: mapZoom)
             .overlay { stationBubble }
             .sheet(item: $aboutPlace) { PlaceInfoView(query: $0) }
             .overlay(alignment: .bottomTrailing) {
@@ -478,6 +494,7 @@ private struct StationMap: View {
                         .padding(8)
                 }
             }
+            .overlay(alignment: .bottom) { remoteBanner }
             .alert("Go to", isPresented: $showGoTo) {
                 TextField("41.5, -88.1 · EN51 · KC9KKO-9", text: $goToText)
                 Button("Go") { goTo() }
@@ -617,7 +634,7 @@ private struct StationMap: View {
             .toggleStyle(.button)
             rangeSettings.padding(.horizontal, -16)
             ViewSettingsRow(appliedWatch: model.watch, connected: model.running,
-                            onApplyWatch: { model.updateCoverage(coverageAreas, watch: WatchList.parse(viewWatchList), force: true) })
+                            onApplyWatch: { model.updateCoverage(coverageAreas, watch: watchCalls, force: true) })
                 .padding(.horizontal, -16)
             if let status = gps.status {
                 Text(status).font(.caption).foregroundStyle(.secondary)
@@ -637,7 +654,7 @@ private struct StationMap: View {
             layers.ringRadii = (1...max(1, ringCount)).map { Double($0) * ringSpacing * 1609.344 }
         }
         layers.alerts = nwsEnabled ? warnings.mapped + warnings.aprsMapped : []
-        layers.watched = WatchList.parse(viewWatchList)
+        layers.watched = watchCalls
         layers.labels = layerLabels
         layers.nicknames = Nicknames.load(nicknameStore)
         var paths = Set(pathStore.split(separator: ",").map(String.init))
@@ -683,7 +700,7 @@ private struct StationMap: View {
     private var viewFilter: ViewFilter {
         ViewFilter(stations: viewStations, weather: viewWeather, objects: viewObjects, source: viewSource,
                    maxAgeMinutes: viewMaxAgeMinutes, maxMiles: viewMaxMiles, movingOnly: viewMovingOnly,
-                   hideInfrastructure: viewHideInfrastructure, watched: WatchList.parse(viewWatchList), only: viewOnly)
+                   hideInfrastructure: viewHideInfrastructure, watched: watchCalls, only: viewOnly)
     }
 
     private var mapStations: [StationDetail] {
@@ -742,13 +759,106 @@ private struct StationMap: View {
             RangeField(label: "Last fix", value: $rangeLastFix)
             RangeField(label: "Map center", value: $rangeCenter)
             if model.running {
-                Button("Apply") { model.updateCoverage(coverageAreas, watch: WatchList.parse(viewWatchList), force: true) }
+                Button("Apply") { model.updateCoverage(coverageAreas, watch: watchCalls, force: true) }
                     .disabled(!rangesChanged)
             } else {
                 Text("Used when you connect").font(.caption).foregroundStyle(.secondary)
             }
         }
         .padding(.horizontal)
+    }
+
+    /** Every callsign fetched from anywhere: the Always show list plus a station tracked with MT. */
+    private var watchCalls: [String] {
+        let list = WatchList.parse(viewWatchList)
+        guard let t = trackedCall, !list.contains(t) else { return list }
+        return list + [t]
+    }
+
+    /** A heard station by callsign; "KC9XYZ" also finds "KC9XYZ-9" when there's no plain one. */
+    private func station(named call: String) -> StationDetail? {
+        let call = call.uppercased()
+        return model.stations.first { $0.callsign == call } ?? model.stations.first { $0.callsign.hasPrefix(call + "-") }
+    }
+
+    /** MP, MZ, MT and MB from a CAT program. */
+    private func handleRemote(_ action: RemoteAction, core: AppleAprs) {
+        switch action {
+        case .zoom(let steps):
+            mapZoom = MapZoom(steps: steps)
+        case .zoomTo(let call):
+            if let s = station(named: call) {
+                followGPS = false
+                focus = MapFocus(callsign: s.callsign, coordinate: s.coordinate, meters: 3_000)
+                selectedStation = s.callsign
+            } else {
+                note("\(call) hasn't been heard yet")
+            }
+        case .track(let call):
+            if let call {
+                trackedCall = call
+                trackedCoordinate = nil
+                followGPS = false
+                note(station(named: call) == nil ? "Tracking \(call) — waiting to hear it" : "Tracking \(call)")
+                followTrackedStation()
+            } else {
+                stopTracking()
+            }
+        case .beaconNow:
+            core.beaconNow()
+            note("Beacon sent")
+        }
+    }
+
+    /** Keeps the map on a station tracked with MT, moving only when it reports a new position. */
+    private func followTrackedStation() {
+        guard let call = trackedCall, let s = station(named: call) else { return }
+        let c = s.coordinate
+        if let last = trackedCoordinate, abs(last.latitude - c.latitude) < 1e-6, abs(last.longitude - c.longitude) < 1e-6 { return }
+        trackedCoordinate = c
+        focus = MapFocus(callsign: s.callsign, coordinate: c)
+    }
+
+    private func stopTracking() {
+        trackedCall = nil
+        trackedCoordinate = nil
+        VirtualRig.shared.stopTracking()
+    }
+
+    private func note(_ text: String) {
+        remoteNote = text
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(4))
+            if remoteNote == text { remoteNote = nil }
+        }
+    }
+
+    /** "Tracking KC9XYZ-1" (with a stop button) and short notes about CAT commands. */
+    @ViewBuilder private var remoteBanner: some View {
+        if trackedCall != nil || remoteNote != nil {
+            HStack(spacing: 8) {
+                if let call = trackedCall {
+                    Image(systemName: "scope")
+                    Text(remoteNote ?? "Tracking \(call)")
+                    Button { stopTracking() } label: { Image(systemName: "xmark.circle.fill") }
+                        .buttonStyle(.borderless)
+                        .help("Stop tracking \(call)")
+                } else if let remoteNote {
+                    Text(remoteNote)
+                }
+            }
+            .font(.callout)
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .background(.regularMaterial, in: Capsule())
+            .padding(.bottom, 28)
+        }
+    }
+
+    /** iPhone and iPad: the map stays on screen while APRSERJi is open (CarPlay can't show it). */
+    private func keepScreenOn(_ active: Bool) {
+        #if os(iOS)
+        UIApplication.shared.isIdleTimerDisabled = active
+        #endif
     }
 
     private func goTo() {
@@ -867,7 +977,7 @@ private struct StationMap: View {
               !enableSending || (!credential.isEmpty && credential != "-1"),
               model.connect(account: account, passcode: enableSending ? credential : "-1",
                             host: server.trimmingCharacters(in: .whitespacesAndNewlines),
-                            port: tcpPort, areas: coverageAreas, watch: WatchList.parse(viewWatchList)) else {
+                            port: tcpPort, areas: coverageAreas, watch: watchCalls) else {
             validationError = true
             return
         }

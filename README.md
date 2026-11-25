@@ -54,7 +54,7 @@ Everything about your own station, on one scrolling page:
 
 1. **Connection and beacon**: callsign, server and passcode (kept in the Keychain), then beacon on/off with its status, position source and grid, symbol, comment and timing, and the report format (Mic-E, compressed, precision, timestamp, course/speed, altitude).
 2. **Status and telemetry**: a scheduled status report, and your own telemetry channels (packets heard, digipeated and gated, messages) with names, units and scaling.
-3. **Radio ports, IGate, GPS and weather station**: add a port or find network KISS TNCs, choose what gets gated to RF, pick the GPS source (Location Services, serial NMEA, network NMEA or gpsd), turn on the virtual radio that CAT programs can talk to (Mac), and choose a weather station source such as a Tempest.
+3. **Radio ports, IGate, GPS and weather station**: add a port or find network KISS TNCs, choose what gets gated to RF, pick the GPS source (Location Services, serial NMEA, network NMEA or gpsd), turn on the virtual radio that CAT programs can talk to (on the Mac from this Mac; on iPhone and iPad from the local network) with its channel list, and choose a weather station source such as a Tempest.
 4. **Weather reports, automatic answers and services**: send your weather as your station or an object and upload it to CWOP; answer APRS queries, send an away message, run a QRU object server or an information kiosk; set backup APRS-IS servers and station-history retention; and run a local APRS-IS server, UDP input or a syslog copy for other programs.
 5. **Map layers and offline maps**: paths, dead reckoning, PHG, NWS areas, labels, RF packet paths, DF beams, radio horizons, ambiguity shading, multiline objects, weather radar and range rings, and the offline tile cache with area download.
 6. **Track logs, alerts, callsign lookup and display**: daily GPX/CSV track logs, watched-station alerts with sounds, the FCC license database for WHO-IS, metric units, message notifications and the reset-window button.
@@ -199,6 +199,22 @@ NWS alerts for your location (from api.weather.gov), APRS bulletins (BLN…, NWS
 - **Radio ports**: Dire Wolf, UZ7HO Sound Modem, AGWPE or a network KISS TNC (KISS, AGWPE or TEXT/TNC2 monitor), found automatically on the network. On the Mac, a workspace of named ports adds serial/USB TNCs (KISS, Kenwood, TNC2), Bluetooth Classic (SPP) and Bluetooth LE KISS TNCs (Mobilinkd TNC3/4, BTECH UV-PRO, ESP32/Nordic UART), and an ISS/ARISS preset. Each port can transmit or listen only, send your beacons, **digipeat** (WIDE1-1 fill-in or wide-area transforms, also onto other ports), and **IGate** both ways: RF to APRS-IS, and APRS-IS messages (plus callsigns, objects or a javAPRSFilter you choose) to RF.
 - **GPS (Mac)**: Location Services, a serial NMEA GPS, network NMEA or gpsd, with a satellite sky plot.
 - **Virtual radio for CAT programs (Mac)**: other programs on the same Mac can send CAT commands to APRSERJi as if it were a radio, over TCP on the IPv6 loopback **[::1]** (and 127.0.0.1), port 4532 by default, or through a serial device APRSERJi creates (**~/cu.APRSERJi**, a pseudo-terminal). It answers **Kenwood TS-480** commands (FA; FB; MD; IF; FR; FT; TX; RX; ID; …) and **Hamlib rigctld** commands (f, F, m, M, v, V, t, T, s, S, \dump_state, extended "+" replies), deciding the language for each command. In WSJT-X, a logger or a satellite tracker choose Rig **Hamlib NET rigctl** with server `[::1]:4532`, or a **Kenwood TS-480** on `~/cu.APRSERJi`. APRSERJi keeps the frequency, mode, VFO, split and PTT they set, shows them in Setup, and can start its beacon comment with the frequency in the APRS form (e.g. `146.520MHz`). Nothing is transmitted because of a CAT command.
+- **APRSERJi's own CAT commands** (Mac, iPhone and iPad), each ended by `;` or a new line and answered with its result (or `?`):
+
+  | Command | Does |
+  |---|---|
+  | `MP=01` / `MP=-01` | Zoom the map in / out one step (up to ±20) |
+  | `MC=0012` | Tune channel 12 from the channel list |
+  | `MC=X+1` / `MC=X-1` | Next / previous channel in the list |
+  | `MC=-1` | Back to the channel in use before |
+  | `MF=145.610/107.2/145.610` | Transmit MHz / transmit CTCSS tone / receive MHz (`MF=145.610/xz/145.610`: no tone) |
+  | `MT=KC9XYZ-01` / `MT=OFF` | Track a station on the map (it's also fetched from APRS-IS wherever it is) / stop |
+  | `MZ=KC9XYZ-01` | Zoom the map to a station once |
+  | `MB` / `MB=60S` / `MB=SMART` | Beacon now / every 60 seconds (whole minutes) / SmartBeaconing (also `GENIUS`, `ON`, `OFF`) |
+
+  `MC`, `MF` and `MT` on their own report the current channel, frequencies and tracked station.
+- **Channels** (Setup ▸ Channels): a channel list for `MC`, typed in or imported from a **CHIRP .csv** export (repeater offsets, split and CTCSS tones included).
+- **iPhone and iPad virtual radio**: devices on the same Wi-Fi network or hotspot can connect to APRSERJi's CAT port (the address is shown in Setup). While APRSERJi is open on an iPhone or iPad the screen stays on, so the map stays visible in the car — CarPlay can't show a custom map.
 - **Weather station**: a WeatherFlow **Tempest** (local network broadcasts, or the WeatherFlow cloud with your token), a web address or file (wxnow.txt or JSON), or a Peet Bros Ultimeter on a serial port (Mac). Send your readings as your station or a weather object, and upload them to **CWOP**.
 - **Automatic answers**: standard APRS queries (?APRS?, ?APRSP, ?PING?, ?VER, ?IGATE…), an away message with loop protection, a QRU object server and an information kiosk.
 - **Services**: APRS-IS backup servers, a local APRS-IS server for other programs (Xastir, YAAC…), UDP packet input, a syslog copy, station history retention, daily GPX/CSV track logs, and watched-station alerts (nearby, or gone quiet) with sounds.
