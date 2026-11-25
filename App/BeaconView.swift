@@ -53,7 +53,15 @@ enum BeaconSync {
         let enabled = d.bool(forKey: "beaconEnabled")
         let mode = BeaconMode(rawValue: d.string(forKey: "beaconMode") ?? "") ?? .interval
         let key = d.string(forKey: "beaconSymbol") ?? "/>"
-        let comment = d.string(forKey: "beaconComment") ?? "APRSERJi"
+        var comment = d.string(forKey: "beaconComment") ?? "APRSERJi"
+        #if os(macOS)
+        // The virtual radio's frequency at the start of the comment, in the APRS "FFF.FFFMHz" form.
+        let rigHz = VirtualRig.shared.beaconFrequencyHz
+        if d.bool(forKey: "catFreqInBeacon"), rigHz > 0, rigHz < 1_000_000_000 {
+            let tag = String(format: "%07.3fMHz", Double(rigHz) / 1_000_000)
+            comment = tag + (comment.isEmpty ? "" : " " + String(comment.prefix(43 - tag.count - 1)))
+        }
+        #endif
         let source = BeaconSource(rawValue: d.string(forKey: "beaconSource") ?? "") ?? .gps
         let maximum: Int
         switch mode {

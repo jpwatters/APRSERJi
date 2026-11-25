@@ -32,6 +32,7 @@ struct SetupView: View {
                 PortsSection(core: core)
                 #if os(macOS)
                 GpsSourceSection(core: core)
+                CatRigSection()
                 #endif
                 WeatherStationSections(core: core)
                 ServicesSections(core: core)

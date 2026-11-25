@@ -324,6 +324,7 @@ private struct StationMap: View {
                     core.setStation(callsign: station)
                     #if os(macOS)
                     ExternalGps.shared.tick(core: core, gps: gps)
+                    VirtualRig.shared.apply()
                     #endif
                     let here = gps.latest?.coordinate ?? BeaconSync.fixedCoordinate()
                     core.setOwnPosition(latitude: here?.latitude ?? 0, longitude: here?.longitude ?? 0,
