@@ -245,6 +245,13 @@ struct OSMMap: NativeMapRepresentable {
         map.showsCompass = false
         map.showsScale = true
         map.pointOfInterestFilter = .excludingAll
+        // The map tiles are always light, so draw marker labels the light-mode way — black text with a white
+        // outline — even when the rest of the app is in dark mode (where MapKit would make them white).
+        #if os(macOS)
+        map.appearance = NSAppearance(named: .aqua)
+        #else
+        map.overrideUserInterfaceStyle = .light
+        #endif
         map.setRegion(MKCoordinateRegion(center: center, latitudinalMeters: 120_000, longitudinalMeters: 120_000),
                       animated: false)
         map.delegate = coordinator
