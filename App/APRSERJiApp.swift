@@ -16,7 +16,7 @@ struct APRSERJiApp: App {
     }
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(AppInfo.title) {
             StationMap(model: model)
                 #if os(macOS)
                 .background(WindowAccessor())
@@ -31,6 +31,12 @@ struct APRSERJiApp: App {
         }
         #endif
     }
+}
+
+/** The app's name and version, as shown in the title bar: "APRSERJi 0.5.5". */
+enum AppInfo {
+    static let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+    static let title = version.isEmpty ? "APRSERJi" : "APRSERJi \(version)"
 }
 
 @MainActor
@@ -331,6 +337,7 @@ private struct StationMap: View {
                     core.setStation(callsign: station)
                     #if os(macOS)
                     ExternalGps.shared.tick(core: core, gps: gps)
+                    MainWindow.keepTitle()
                     #endif
                     VirtualRig.shared.apply()
                     followTrackedStation()

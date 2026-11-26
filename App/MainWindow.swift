@@ -17,12 +17,20 @@ enum MainWindow {
     private static weak var window: NSWindow?
     private static var settled = false
     private static var observers: [NSObjectProtocol] = []
+    private static var titleObservations: [NSKeyValueObservation] = []
 
     static func attach(_ window: NSWindow) {
         guard self.window !== window else { return }
         self.window = window
         settled = false
         window.isRestorable = false
+        // Show "APRSERJi 0.5.5" in the title bar, beside the tabs, and keep it there: SwiftUI renames the window
+        // after a tab's navigation title, so put the app's name back whenever that happens.
+        keepTitle(window)
+        titleObservations = [
+            window.observe(\.title, options: [.new]) { w, _ in DispatchQueue.main.async { keepTitle(w) } },
+            window.observe(\.titleVisibility, options: [.new]) { w, _ in DispatchQueue.main.async { keepTitle(w) } },
+        ]
         observers.forEach(NotificationCenter.default.removeObserver)
         let center = NotificationCenter.default
         observers = [NSWindow.didEndLiveResizeNotification, NSWindow.didMoveNotification,
@@ -42,6 +50,13 @@ enum MainWindow {
                 if delay >= 1.0 { settled = true }
             }
         }
+    }
+
+    /** "APRSERJi 0.5.5", visible in the title bar on every tab (SwiftUI hides it on tabs with a navigation title). */
+    static func keepTitle(_ window: NSWindow? = nil) {
+        guard let w = window ?? self.window else { return }
+        if w.title != AppInfo.title { w.title = AppInfo.title }
+        if w.titleVisibility != .visible { w.titleVisibility = .visible }
     }
 
     /** The saved frame, kept on a screen that still exists. */
