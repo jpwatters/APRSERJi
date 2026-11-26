@@ -618,6 +618,12 @@ private struct StationMap: View {
         VStack(alignment: .leading, spacing: 8) {
             connectionSettings.padding(.horizontal, -16).padding(.top, -16)
             Divider()
+            // The app's name, version and build, just above the Tiles and Layers selectors.
+            Text(AppInfo.versionLine)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .center)
             HStack {
                 Picker("Tiles", selection: $tilePreset) {
                     ForEach(TilePreset.allCases) { preset in Text(preset.rawValue).tag(preset) }
