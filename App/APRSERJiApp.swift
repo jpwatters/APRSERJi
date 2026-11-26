@@ -599,6 +599,11 @@ private struct StationMap: View {
             if !showMapControls { autoConnectNotice }
             if showMapControls {
                 Divider()
+                // The app's name, version and build, at the top of Map Settings (outside the scroll view so it always shows).
+                Text(AppInfo.versionLine)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
                 // Scrolls only when the window is too short to show every setting.
                 ViewThatFits(in: .vertical) {
                     mapControls
@@ -616,12 +621,6 @@ private struct StationMap: View {
 
     private var mapControls: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // The app's name, version and build, at the top of Map Settings.
-            Text(AppInfo.versionLine)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .center)
             connectionSettings.padding(.horizontal, -16).padding(.top, -16)
             Divider()
             HStack {
