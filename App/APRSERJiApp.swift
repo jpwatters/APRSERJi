@@ -481,13 +481,7 @@ private struct StationMap: View {
                onAboutPlace: { aboutPlace = PlaceQuery(coordinate: $0) }, zoom: mapZoom)
             .overlay { stationBubble }
             .sheet(item: $aboutPlace) { PlaceInfoView(query: $0) }
-            .overlay(alignment: .bottomTrailing) {
-                Link("© OpenStreetMap contributors", destination: URL(string: "https://www.openstreetmap.org/copyright")!)
-                    .font(.caption2)
-                    .padding(5)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 4))
-                    .padding(6)
-            }
+            .overlay(alignment: .bottomTrailing) { MapCredits() }
             .overlay(alignment: .top) { mapOverlay }
             .overlay {
                 if extras.measureA != nil && extras.measureB == nil {
@@ -1036,6 +1030,42 @@ private struct RangeField: View {
                 #endif
                 .onSubmit { value = RangeSetting.clamp(value) }
                 .accessibilityLabel("\(label) range in miles")
+        }
+    }
+}
+
+/**
+ The credits in the map's lower right corner. "© OpenStreetMap contributors" is always shown (OpenStreetMap's
+ licence asks for it whenever the map is on screen); the dedication joins it for the first 5 seconds after
+ launch and then for 5 seconds every 5 minutes.
+ */
+private struct MapCredits: View {
+    static let dedication = "Brought to you by KJ4DXK\nand\nProgrammed by KC9KKO\nIn memory of\nLynn KJ4ERJ"
+    /** Set the first time the map is drawn, which is right after launch. */
+    private static let launched = Date()
+
+    static func showsDedication(at date: Date) -> Bool {
+        let elapsed = date.timeIntervalSince(launched)
+        return elapsed.truncatingRemainder(dividingBy: 300) < 5
+    }
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let dedicate = Self.showsDedication(at: context.date)
+            VStack(alignment: .trailing, spacing: 3) {
+                if dedicate {
+                    Text(Self.dedication)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .transition(.opacity)
+                }
+                Link("© OpenStreetMap contributors", destination: URL(string: "https://www.openstreetmap.org/copyright")!)
+            }
+            .font(.caption2)
+            .padding(5)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 4))
+            .padding(6)
+            .animation(.easeInOut(duration: 0.6), value: dedicate)
         }
     }
 }
