@@ -5,6 +5,8 @@ set -euo pipefail
 VERSION=${1:?usage: ./release.sh <version, e.g. 0.2.0>}
 REPO=jpwatters/APRSERJi
 cd ~/src/APRSERJi
+# Use the gh login saved in the keychain; a stale GITHUB_TOKEN in the shell would override it.
+unset GITHUB_TOKEN GH_TOKEN
 
 # 0. Checks before anything changes
 command -v gh >/dev/null || { echo "Install the GitHub CLI first: brew install gh && gh auth login"; exit 1; }
