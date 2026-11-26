@@ -73,7 +73,7 @@ struct SetupView: View {
                 TrackLogSection()
                 WatchAlertSection()
                 FCCDatabaseSection()
-                Section("Display & alerts") {
+                Section {
                     Toggle("Metric units", isOn: $metric)
                     Toggle("Notify me of new messages", isOn: $notify)
                         .onChange(of: notify) { _, on in if on { MessageNotifier.shared.requestAuthorization() } }
@@ -81,6 +81,16 @@ struct SetupView: View {
                     Button("Reset window size") { MainWindow.resetSize() }
                         .help("Return the window to its normal size, centered — or press ⌥⌘0 (Window ▸ Reset Window Size) anytime.")
                     #endif
+                } header: {
+                    Text("Display & alerts")
+                } footer: {
+                    // The app's name, version and build, at the very bottom of Setup.
+                    Text(AppInfo.versionLine)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.top, 12)
                 }
             }
             .formStyle(.grouped)

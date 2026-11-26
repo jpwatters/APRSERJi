@@ -37,6 +37,9 @@ struct APRSERJiApp: App {
 enum AppInfo {
     static let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
     static let title = version.isEmpty ? "APRSERJi" : "APRSERJi \(version)"
+    static let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
+    /** "APRSERJi 0.5.5 (build 9)", at the bottom of Setup. */
+    static let versionLine = title + (build.isEmpty ? "" : " (build \(build))")
 }
 
 @MainActor
