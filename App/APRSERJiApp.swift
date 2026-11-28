@@ -354,6 +354,11 @@ private struct StationMap: View {
                     WeatherStation.shared.tick(core: core)
                     AnsrvrKeepalive.tick(core: core, account: station)
                     WatchAlerts.shared.tick(stations: model.stations, origin: origin.coordinate)
+                    #if os(iOS)
+                    WatchCompanion.shared.tick(core: core, account: station, canSend: enableSending && model.running,
+                                               connection: model.status, stations: model.stations,
+                                               origin: origin.coordinate, revision: model.revision)
+                    #endif
                     TrackLogger.shared.tick(tracks: model.tracks, own: gps.latest, ownCall: station)
                     warnings.updateAprs(bulletins: model.bulletins.map {
                         AprsBulletinText(sender: $0.sender, destination: $0.destination, text: $0.text)

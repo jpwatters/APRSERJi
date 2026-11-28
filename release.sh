@@ -11,6 +11,11 @@ unset GITHUB_TOKEN GH_TOKEN
 # 0. Checks before anything changes
 command -v gh >/dev/null || { echo "Install the GitHub CLI first: brew install gh && gh auth login"; exit 1; }
 gh auth status >/dev/null 2>&1 || { echo "Sign in to GitHub first: gh auth login"; exit 1; }
+# Use the jpwatters GitHub login for this run (gh may have been left on KC9KKO by another script).
+JPW=$(gh auth status --hostname github.com 2>&1 | grep -o 'account [^ ]*' | awk '{print $2}' | grep -ix jpwatters | head -1 || true)
+[ -n "$JPW" ] || { echo "gh isn't signed in as jpwatters; run gh auth login and sign in as jpwatters. Nothing was changed."; exit 1; }
+[[ "$(gh api user --jq .login 2>/dev/null || true)" == "$JPW" ]] || gh auth switch --hostname github.com --user "$JPW"
+echo "GitHub login: $(gh api user --jq .login)"
 if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then echo "Tag v$VERSION already exists"; exit 1; fi
 BRANCH=$(git branch --show-current)
 
