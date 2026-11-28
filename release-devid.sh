@@ -59,6 +59,8 @@ if [ -f docs/tour/index.html ]; then
   rsync -a --exclude '*.png' --exclude '.DS_Store' docs/tour/ "$OUT/dmg/APRSERJi Tour/"
   python3 tour/readme-links.py README.md "$OUT/dmg/APRSERJi Tour/APRSERJi README.md"
 fi
+# The project document (changes, sources and complete listings) at the top of the disk image.
+[ -f docs/APRSERJi.pdf ] && cp docs/APRSERJi.pdf "$OUT/dmg/APRSERJi.pdf"
 hdiutil create -volname APRSERJi -srcfolder "$OUT/dmg" -ov -format UDZO "$DMG"
 codesign --sign "$IDENTITY" --timestamp "$DMG"
 
