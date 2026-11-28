@@ -181,4 +181,9 @@ done
 
 say "== Writing docs/tour/README.md and the README section =="
 python3 tour/tour-docs.py
+if python3 -c "import reportlab, PIL" 2>/dev/null; then
+  python3 tour/tour-checklist.py
+else
+  echo "Skipped docs/tour/Checklist.pdf (it needs: pip3 install reportlab pillow)"
+fi
 echo "Done. Open docs/tour/README.md to look through the tour."
