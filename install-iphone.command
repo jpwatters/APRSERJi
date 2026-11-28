@@ -40,7 +40,7 @@ for x in d["result"]["devices"]:
     id=${line%%,*}
     echo "-- device $id"
     xcrun devicectl device install app --device "$id" "$APP" && \
-    xcrun devicectl device process launch --device "$id" com.kc9kko.APRSERJi
+    xcrun devicectl device process launch --terminate-existing --device "$id" com.kc9kko.APRSERJi
   done
 
   echo "== install on Apple Watch =="

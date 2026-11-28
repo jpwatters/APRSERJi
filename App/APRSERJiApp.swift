@@ -57,9 +57,11 @@ private final class AprsModel: ObservableObject {
 
     init() {
         do {
+            // The screenshot tour keeps its demo chats apart from yours, and starts fresh each run.
             let support = try FileManager.default.url(
                 for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true
-            ).appendingPathComponent("APRSERJi", isDirectory: true)
+            ).appendingPathComponent(Tour.enabled ? "APRSERJi-Tour" : "APRSERJi", isDirectory: true)
+            if Tour.enabled { try? FileManager.default.removeItem(at: support) }
             try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
             let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1"
             core = try AppleAprs(
@@ -244,6 +246,7 @@ private struct StationMap: View {
     @State private var goToText = ""
     @State private var goToProblem = false
     @State private var showMultiTrack = false
+    @State private var toolPath: [ToolPage] = []
     @State private var tick = 0
     @State private var unread = 0
     @AppStorage("notifyMessages") private var notify = true
@@ -294,13 +297,14 @@ private struct StationMap: View {
                                   tab = 0
                               },
                               onMessage: { openChat(with: $0) },
-                              onMultiTrack: { showMultiTrack = true })
+                              onMultiTrack: { showMultiTrack = true },
+                              path: $toolPath)
                         .tabItem { Label("Tools", systemImage: "wrench.and.screwdriver") }
                         .tag(5)
                 }
             }
             .onAppear {
-                if notify { MessageNotifier.shared.requestAuthorization() }
+                if notify && !Tour.enabled { MessageNotifier.shared.requestAuthorization() }
             }
             .sheet(isPresented: $showMultiTrack) {
                 MultiTrackView(stations: model.stations, tracks: model.tracks, preset: tilePreset)
@@ -311,6 +315,7 @@ private struct StationMap: View {
                 startBeaconGPSIfNeeded()
                 refreshSavedPasscode()
                 scheduleAutoConnect()
+                startTour()
             }
             .onChange(of: callsign) { _, _ in refreshSavedPasscode() }
             .onChange(of: model.status) { _, status in
@@ -344,6 +349,7 @@ private struct StationMap: View {
                     #endif
                     VirtualRig.shared.apply()
                     followTrackedStation()
+                    if Tour.enabled { gps.tourFix() }
                     let here = gps.latest?.coordinate ?? BeaconSync.fixedCoordinate()
                     core.setOwnPosition(latitude: here?.latitude ?? 0, longitude: here?.longitude ?? 0,
                                         altitudeMeters: gps.latest.map { $0.verticalAccuracy >= 0 ? $0.altitude : .nan } ?? .nan,
@@ -384,6 +390,15 @@ private struct StationMap: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .aprserjiRemote)) { note in
                 if let action = note.object as? RemoteAction { handleRemote(action, core: core) }
+            }
+            .onReceive(TourDirector.shared.$scene) { scene in
+                guard let scene, scene.name != "done" else { return }
+                tab = scene.tab
+                withAnimation(.snappy) { showMapControls = scene.mapControls }
+                stationPath = scene.station.map { [$0] } ?? []
+                if let peer = scene.recipient { recipient = peer }
+                toolPath = scene.tool.map { [$0] } ?? []
+                showMultiTrack = scene.multiTrack
             }
             .onChange(of: followGPS) { _, following in
                 if following, trackedCall != nil { stopTracking() }
@@ -911,9 +926,39 @@ private struct StationMap: View {
         MessageNotifier.shared.setBadge(unread)
     }
 
+    /** Screenshot tour: stand at Goose Lake Prairie, connect to tour.sh's demo server and start the walk-through. */
+    private func startTour() {
+        guard Tour.enabled, !model.running else { return }
+        autoConnectChecked = true
+        #if os(macOS)
+        // Fill the screen (keeping the menu bar, Dock and title bar visible) so the screenshots are full size.
+        if let window = NSApp.windows.first(where: { $0.canBecomeMain }), let screen = window.screen ?? NSScreen.main {
+            window.setFrame(screen.visibleFrame, display: true, animate: false)
+        }
+        #endif
+        // Beacon from the demo spot. (Set here: a launch argument can't carry a value starting with "-".)
+        UserDefaults.standard.set(String(Tour.coordinate.latitude), forKey: "beaconLatitude")
+        UserDefaults.standard.set(String(Tour.coordinate.longitude), forKey: "beaconLongitude")
+        center = Tour.coordinate
+        followGPS = false
+        focus = MapFocus(callsign: "", coordinate: Tour.coordinate, meters: 30_000)
+        gps.tourFix()
+        let account = normalizedCallsign(callsign)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+            _ = model.connect(account: account, passcode: Tour.passcode(account), host: Tour.server, port: Tour.port,
+                              areas: coverageAreas, watch: watchCalls)
+        }
+        // A message of our own, so Messages shows delivery and acknowledgment.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8) {
+            guard let core = model.core else { return }
+            Task { try? await core.enqueue(account: account, peer: "N0DEMO-9", body: "Sounds good. See you at the visitor center, 73") }
+        }
+        TourDirector.shared.start()
+    }
+
     /** Once per launch: with a valid callsign and a server-verified passcode saved, connect in 15 seconds. */
     private func scheduleAutoConnect() {
-        guard !autoConnectChecked else { return }
+        guard !autoConnectChecked, !Tour.enabled else { return }
         autoConnectChecked = true
         let account = normalizedCallsign(callsign)
         guard !model.running, AprsProtocol.shared.validCallsign(value: account),

@@ -1,10 +1,10 @@
 #!/bin/zsh
-# Push only README.md to github.com/kc9kko/APRSERJi-MacOS (no code). Its screenshot and document links are
-# pointed at jpwatters/APRSERJi, where docs/ lives, so the pictures still show on kc9kko's page.
+# Push README.md and the screenshot tour (docs/tour) to github.com/kc9kko/APRSERJi-MacOS (no code). README's
+# other links into docs/ are pointed at jpwatters/APRSERJi, where docs/ lives, so its pictures still show.
 # Usage: ./pushkko.sh "What changed"
 set -euo pipefail
 cd ~/src/APRSERJi
-MESSAGE=${1:-"Update README"}
+MESSAGE=${1:-"Update README and tour"}
 REPO=kc9kko/APRSERJi-MacOS
 SOURCE=jpwatters/APRSERJi
 SOURCE_BRANCH=main
@@ -35,24 +35,7 @@ GH_USER=$(gh api user --jq .login)
 echo "GitHub login: $GH_USER"
 gh repo view "$REPO" >/dev/null 2>&1 || { echo "$GH_USER can't see $REPO. Create it on GitHub first; nothing was changed."; exit 1; }
 
-# README.md with relative links made absolute: pictures from raw.githubusercontent.com, documents from github.com.
-TMP=$(mktemp)
-trap 'rm -f "$TMP"; [ "$PREV_USER" != "$GH_USER" ] && gh auth switch --hostname github.com --user "$PREV_USER" >/dev/null 2>&1 || true' EXIT
-SOURCE="$SOURCE" SOURCE_BRANCH="$SOURCE_BRANCH" perl -pe '
-  my $raw  = "https://raw.githubusercontent.com/$ENV{SOURCE}/$ENV{SOURCE_BRANCH}/";
-  my $blob = "https://github.com/$ENV{SOURCE}/blob/$ENV{SOURCE_BRANCH}/";
-  s{(src=")(?![a-z][a-z0-9+.-]*:|/|#)}{$1$raw}gi;
-  s{(!\[[^\]]*\]\()(?![a-z][a-z0-9+.-]*:|/|#)}{$1$raw}gi;
-  s{((?<!!)\[[^\]]*\]\()(?![a-z][a-z0-9+.-]*:|/|#)}{$1$blob}gi;
-' README.md > "$TMP"
-
-# Upload it as README.md on kc9kko's default branch, replacing what's there (skipped if nothing changed).
-SHA=$(gh api "repos/$REPO/contents/README.md" --jq .sha 2>/dev/null || true)
-if [ -n "$SHA" ] && [ "$(gh api "repos/$REPO/contents/README.md" --jq .content | base64 -D)" = "$(cat "$TMP")" ]; then
-  echo "README.md on $REPO is already up to date."
-  exit 0
-fi
-ARGS=(-X PUT "repos/$REPO/contents/README.md" -f message="$MESSAGE" -f content="$(base64 < "$TMP")")
-[ -n "$SHA" ] && ARGS+=(-f sha="$SHA")
-gh api "${ARGS[@]}" --jq '"Pushed README.md as " + .commit.sha[0:7]'
+# README.md (its links into docs/ pointed at jpwatters/APRSERJi, except the tour) and docs/tour, in one commit.
+trap '[ "$PREV_USER" != "$GH_USER" ] && gh auth switch --hostname github.com --user "$PREV_USER" >/dev/null 2>&1 || true' EXIT
+GH_TOKEN="$(gh auth token)" python3 tour/publish-kko.py "$REPO" "$MESSAGE"
 echo "GitHub: https://github.com/$REPO"

@@ -14,7 +14,7 @@ struct APRSERJiWatchApp: App {
                 BeaconPage().tag(-1)
                 MessagesPage().tag(0)
                 StationsPage().tag(1)
-                MapPage().tag(2)
+                MapPage(visible: page == 2).tag(2)
                 BeaconPage().tag(3)
                 MessagesPage().tag(Self.count)
             }
@@ -22,6 +22,10 @@ struct APRSERJiWatchApp: App {
             .overlay(alignment: .trailing) { PageEdge(turn: turn) }
             .onChange(of: page) { _, new in wrapAround(new) }
             .environmentObject(store)
+            .onAppear { WatchTourDirector.shared.start() }
+            .onReceive(WatchTourDirector.shared.$step) { step in
+                if let step { page = step.page }
+            }
         }
     }
 

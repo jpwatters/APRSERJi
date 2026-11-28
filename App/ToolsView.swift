@@ -4,6 +4,47 @@ import CoreLocation
 import SwiftUI
 import UniformTypeIdentifiers
 
+/** The Tools tab's pages, so a page can also be opened from code (the screenshot tour). */
+enum ToolPage: String, CaseIterable, Hashable {
+    case objects, beaconJournal = "beacon-journal", packetMonitor = "packet-monitor", email
+    case frequencies, platforms, dx, history
+    case satellites, directionFinding = "direction-finding", digitalLogs = "digital-logs", importedLayers = "imported-layers"
+
+    var title: String {
+        switch self {
+        case .objects: return "Objects, items & bulletins"
+        case .beaconJournal: return "Beacon journal"
+        case .packetMonitor: return "Packet monitor"
+        case .email: return "Send email"
+        case .frequencies: return "Frequencies"
+        case .platforms: return "Platforms (radios & software)"
+        case .dx: return "RF DX"
+        case .history: return "Station history & telemetry graphs"
+        case .satellites: return "Satellites"
+        case .directionFinding: return "Direction finding"
+        case .digitalLogs: return "Digital-mode logs (FT8, JS8Call, JT65)"
+        case .importedLayers: return "Imported GPX & OSM layers"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .objects: return "flag"
+        case .beaconJournal: return "list.bullet.rectangle"
+        case .packetMonitor: return "waveform.path.ecg"
+        case .email: return "envelope"
+        case .frequencies: return "dot.radiowaves.left.and.right"
+        case .platforms: return "cpu"
+        case .dx: return "scope"
+        case .history: return "chart.xyaxis.line"
+        case .satellites: return "globe.americas"
+        case .directionFinding: return "location.north.line"
+        case .digitalLogs: return "waveform"
+        case .importedLayers: return "square.3.layers.3d.down.right"
+        }
+    }
+}
+
 /** The Tools tab: monitors, lists and utilities. */
 struct ToolsView: View {
     let core: AppleAprs
@@ -16,46 +57,84 @@ struct ToolsView: View {
     let onShowOnMap: (CLLocationCoordinate2D, String?) -> Void
     let onMessage: (String) -> Void
     let onMultiTrack: () -> Void
+    @Binding var path: [ToolPage]
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             List {
                 Section("Your station") {
-                    NavigationLink { ObjectsView(core: core, mapCenter: mapCenter, myPosition: myPosition) } label: {
-                        Label("Objects, items & bulletins", systemImage: "flag")
-                    }
-                    NavigationLink { BeaconJournalView(core: core) } label: { Label("Beacon journal", systemImage: "list.bullet.rectangle") }
-                    NavigationLink { PacketMonitorView(core: core) } label: { Label("Packet monitor", systemImage: "waveform.path.ecg") }
-                    NavigationLink { EmailView(core: core) } label: { Label("Send email", systemImage: "envelope") }
+                    link(.objects); link(.beaconJournal); link(.packetMonitor); link(.email)
                 }
                 Section("Stations") {
-                    NavigationLink { FrequencyView(stations: stations, origin: origin, onShowOnMap: onShowOnMap) } label: {
-                        Label("Frequencies", systemImage: "dot.radiowaves.left.and.right")
-                    }
-                    NavigationLink { PlatformsView(stations: stations, onShowOnMap: onShowOnMap) } label: {
-                        Label("Platforms (radios & software)", systemImage: "cpu")
-                    }
-                    NavigationLink { DxView(core: core, onShowOnMap: onShowOnMap) } label: { Label("RF DX", systemImage: "scope") }
-                    NavigationLink { HistoryView(core: core, telemetry: telemetry, onShowOnMap: onShowOnMap) } label: {
-                        Label("Station history & telemetry graphs", systemImage: "chart.xyaxis.line")
-                    }
+                    link(.frequencies); link(.platforms); link(.dx); link(.history)
                     Button { onMultiTrack() } label: { Label("MultiTrack (follow up to 8 stations)", systemImage: "rectangle.split.2x2") }
                 }
                 Section("Map") {
-                    NavigationLink { SatellitesView(core: core, observer: origin) } label: { Label("Satellites", systemImage: "globe.americas") }
-                    NavigationLink { DirectionFindingView(origin: origin, originLabel: originLabel) } label: {
-                        Label("Direction finding", systemImage: "location.north.line")
-                    }
-                    NavigationLink { DigitalLogsView(onShowOnMap: onShowOnMap) } label: {
-                        Label("Digital-mode logs (FT8, JS8Call, JT65)", systemImage: "waveform")
-                    }
-                    NavigationLink { ImportedLayersView() } label: { Label("Imported GPX & OSM layers", systemImage: "square.3.layers.3d.down.right") }
+                    link(.satellites); link(.directionFinding); link(.digitalLogs); link(.importedLayers)
                 }
             }
             .navigationTitle("Tools")
+            .navigationDestination(for: ToolPage.self) { page($0) }
+            #if os(iOS)
+            // On iPhone, Tools sits under the More tab, whose own bar would add a second back button.
+            .background(HideMoreNavigationBar())
+            #endif
+        }
+        #if os(iOS)
+        .onDisappear { HideMoreNavigationBar.restore() }
+        #endif
+    }
+
+    private func link(_ page: ToolPage) -> some View {
+        NavigationLink(value: page) { Label(page.title, systemImage: page.icon) }
+    }
+
+    @ViewBuilder private func page(_ page: ToolPage) -> some View {
+        switch page {
+        case .objects: ObjectsView(core: core, mapCenter: mapCenter, myPosition: myPosition)
+        case .beaconJournal: BeaconJournalView(core: core)
+        case .packetMonitor: PacketMonitorView(core: core)
+        case .email: EmailView(core: core)
+        case .frequencies: FrequencyView(stations: stations, origin: origin, onShowOnMap: onShowOnMap)
+        case .platforms: PlatformsView(stations: stations, onShowOnMap: onShowOnMap)
+        case .dx: DxView(core: core, onShowOnMap: onShowOnMap)
+        case .history: HistoryView(core: core, telemetry: telemetry, onShowOnMap: onShowOnMap)
+        case .satellites: SatellitesView(core: core, observer: origin)
+        case .directionFinding: DirectionFindingView(origin: origin, originLabel: originLabel)
+        case .digitalLogs: DigitalLogsView(onShowOnMap: onShowOnMap)
+        case .importedLayers: ImportedLayersView()
         }
     }
 }
+
+#if os(iOS)
+/**
+ Hides the navigation bar of the tab bar's More list while Tools is shown inside it: Tools has its own
+ navigation, and two bars would give each Tools page two back buttons. The More bar comes back when Tools
+ goes away (tap More again to return to the list). On iPad, where there is no More list, it does nothing.
+ */
+private struct HideMoreNavigationBar: UIViewControllerRepresentable {
+    private static weak var hidden: UINavigationController?
+
+    static func restore() {
+        hidden?.setNavigationBarHidden(false, animated: false)
+        hidden = nil
+    }
+
+    final class Probe: UIViewController {
+        override func viewWillAppear(_ animated: Bool) {
+            super.viewWillAppear(animated)
+            // This view sits in Tools' own navigation; the one around that is the More list's.
+            guard let outer = navigationController?.navigationController else { return }
+            outer.setNavigationBarHidden(true, animated: false)
+            HideMoreNavigationBar.hidden = outer
+        }
+    }
+
+    func makeUIViewController(context: Context) -> Probe { Probe() }
+    func updateUIViewController(_ controller: Probe, context: Context) {}
+}
+#endif
 
 struct PacketMonitorView: View {
     let core: AppleAprs

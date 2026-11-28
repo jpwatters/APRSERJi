@@ -273,3 +273,11 @@ APRS-IS servers (default `rotate.aprs2.net`), map tiles from the pdeffenb server
 ## License and credits
 
 APRSERJi and aprs-core are licensed under AGPL-3.0. The app and shared engine are by KJ4DXK and are based on APRSIS32 and APRSISMO by Lynn Deffenbaugh, KJ4ERJ (SK). Fork additions by KC9KKO; the WHO-IS lookup is ported from KC9KKO's Club Members app.
+
+<!-- tour:start -->
+## Application tour
+
+A screenshot of every screen on the Mac, iPad, iPhone and Apple Watch, made with demo data by `./tour.sh`: **[see the full tour](docs/tour/README.md)**.
+
+<a href="docs/tour/README.md#mac"><img src="docs/tour/mac/map.jpg" width="360" alt="Mac"></a> <a href="docs/tour/README.md#ipad"><img src="docs/tour/ipad/map.jpg" width="220" alt="iPad"></a> <a href="docs/tour/README.md#iphone"><img src="docs/tour/iphone/map.jpg" width="130" alt="iPhone"></a> <a href="docs/tour/README.md#apple-watch"><img src="docs/tour/watch/watch-map.jpg" width="110" alt="Apple Watch"></a>
+<!-- tour:end -->

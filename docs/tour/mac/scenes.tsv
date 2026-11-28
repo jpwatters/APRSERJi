@@ -1,0 +1,35 @@
+map	The map: stations around you with callsign labels, tracks and a range of tile styles
+map-settings	Map settings: connection, tiles, layers, receive ranges and the station filter
+stations	Stations: everything heard, sorted by distance, with filters
+station-weather	Station details: a weather station's readings
+station-mobile	Station details: a moving station with course, speed and path
+messages	Messages: two-way APRS messaging with delivery and acknowledgment status
+bulletins	Bulletins and announcements, with NWS warnings for your area
+setup-beacon	Setup: beaconing your position (fixed interval, GeniusBeaconing, SmartBeaconing)
+setup-status	Setup: status text and telemetry
+setup-ports	Setup: radio ports — network, serial and Bluetooth TNCs, IGate and digipeater
+setup-gps	Setup: GPS source (Core Location, serial or network NMEA, gpsd)
+setup-cat	Setup: virtual radio (CAT control) for logging and radio programs
+setup-weather	Setup: your weather station, Tempest and CWOP
+setup-services	Setup: local services — APRS server for other programs, UDP input, syslog
+setup-layers	Setup: map layers
+setup-reference	Setup: state and county boundaries and roads
+setup-offline	Setup: offline maps
+setup-tracklog	Setup: track logging
+setup-watchalerts	Setup: watch list alerts
+setup-fcc	Setup: FCC callsign database
+setup-display	Setup: display and alerts
+tools	Tools
+tools-objects	Tools: Objects, items & bulletins
+tools-beacon-journal	Tools: Beacon journal
+tools-packet-monitor	Tools: Packet monitor
+tools-email	Tools: Send email
+tools-frequencies	Tools: Frequencies
+tools-platforms	Tools: Platforms (radios & software)
+tools-dx	Tools: RF DX
+tools-history	Tools: Station history & telemetry graphs
+tools-satellites	Tools: Satellites
+tools-direction-finding	Tools: Direction finding
+tools-digital-logs	Tools: Digital-mode logs (FT8, JS8Call, JT65)
+tools-imported-layers	Tools: Imported GPX & OSM layers
+multitrack	MultiTrack: follow up to 8 stations at once

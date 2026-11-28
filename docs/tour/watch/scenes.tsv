@@ -1,0 +1,7 @@
+watch-messages	Messages: recent conversations with unread counts
+watch-conversation	A conversation, with acknowledgment status
+watch-reply	Reply by dictation, Scribble or a quick reply
+watch-nearby	Nearby stations with distance and an arrow pointing to each
+watch-station	Station details, with a button to message it
+watch-map	The map around you; swipe the right edge to change pages
+watch-beacon	Beacon status and Beacon now

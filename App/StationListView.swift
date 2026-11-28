@@ -219,21 +219,33 @@ struct StationDetailView: View {
                 Button("Save") { saveNickname(s.callsign) }
             }
             .onAppear { nickname = Nicknames.load(nicknameStore)[s.callsign] ?? "" }
-            HStack {
-                if s.canMessage {
-                    Button { onMessage(s.callsign) } label: { Label("Message", systemImage: "bubble.left") }
-                }
-                Button { onShowOnMap(s) } label: { Label("Show on map", systemImage: "map") }
-                Button { showWhoIs = true } label: { Label("WHO-IS", systemImage: "person.text.rectangle") }
-                if !s.pathNodes.isEmpty {
-                    let showing = pathStore.split(separator: ",").map(String.init).contains(s.callsign)
-                    Button { togglePath(s.callsign) } label: {
-                        Label(showing ? "Hide path" : "Show path", systemImage: "point.topleft.down.to.point.bottomright.curvepath")
-                    }
-                }
+            // On iPhone and iPad the buttons wrap onto more rows instead of squeezing their labels.
+            Group {
+                #if os(iOS)
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 8, alignment: .leading)],
+                          alignment: .leading, spacing: 8) { actions(s) }
+                #else
+                HStack { actions(s) }
+                #endif
             }
+            .labelStyle(.titleAndIcon)
+            .lineLimit(1)
             .sheet(isPresented: $showWhoIs) { WhoIsView(callsign: s.owner ?? s.callsign) }
             .buttonStyle(.bordered)
+        }
+    }
+
+    @ViewBuilder private func actions(_ s: StationDetail) -> some View {
+        if s.canMessage {
+            Button { onMessage(s.callsign) } label: { Label("Message", systemImage: "bubble.left") }
+        }
+        Button { onShowOnMap(s) } label: { Label("Show on map", systemImage: "map") }
+        Button { showWhoIs = true } label: { Label("WHO-IS", systemImage: "person.text.rectangle") }
+        if !s.pathNodes.isEmpty {
+            let showing = pathStore.split(separator: ",").map(String.init).contains(s.callsign)
+            Button { togglePath(s.callsign) } label: {
+                Label(showing ? "Hide path" : "Show path", systemImage: "point.topleft.down.to.point.bottomright.curvepath")
+            }
         }
     }
 

@@ -26,16 +26,17 @@ struct SetupView: View {
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
+          ScrollViewReader { proxy in
             Form {
-                BeaconSections(core: core, mapCenter: mapCenter, now: context.date, gps: gps)
-                StatusTelemetrySections(core: core)
-                PortsSection(core: core)
+                BeaconSections(core: core, mapCenter: mapCenter, now: context.date, gps: gps).id("beacon")
+                StatusTelemetrySections(core: core).id("status")
+                PortsSection(core: core).id("ports")
                 #if os(macOS)
-                GpsSourceSection(core: core)
+                GpsSourceSection(core: core).id("gps")
                 #endif
-                CatRigSection()
-                WeatherStationSections(core: core)
-                ServicesSections(core: core)
+                CatRigSection().id("cat")
+                WeatherStationSections(core: core).id("weather")
+                ServicesSections(core: core).id("services")
                 Section {
                     Toggle("Paths of travel", isOn: $tracks)
                     Toggle("Dead reckoning for moving stations", isOn: $deadReckoning)
@@ -68,11 +69,12 @@ struct SetupView: View {
                 } footer: {
                     Text("Dead reckoning draws a dashed line to where a moving station should be now, from its last course and speed (up to 10 minutes). Range rings are centered on your GPS fix, or the map center when GPS is off. Weather radar is the NEXRAD composite from Iowa Environmental Mesonet (USA).")
                 }
-                ReferenceLayersSection()
-                OfflineMapsSection()
-                TrackLogSection()
-                WatchAlertSection()
-                FCCDatabaseSection()
+                .id("layers")
+                ReferenceLayersSection().id("reference")
+                OfflineMapsSection().id("offline")
+                TrackLogSection().id("tracklog")
+                WatchAlertSection().id("watchalerts")
+                FCCDatabaseSection().id("fcc")
                 Section {
                     Toggle("Metric units", isOn: $metric)
                     Toggle("Notify me of new messages", isOn: $notify)
@@ -92,8 +94,14 @@ struct SetupView: View {
                         .frame(maxWidth: .infinity, alignment: .center)
                         .padding(.top, 12)
                 }
+                .id("display")
             }
             .formStyle(.grouped)
+            // The screenshot tour scrolls to each part of Setup in turn.
+            .onReceive(TourDirector.shared.$scene) { scene in
+                if let anchor = scene?.setup { proxy.scrollTo(anchor, anchor: .top) }
+            }
+          }
         }
     }
 }

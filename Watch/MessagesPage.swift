@@ -2,9 +2,10 @@ import SwiftUI
 
 struct MessagesPage: View {
     @EnvironmentObject var store: WatchStore
+    @State private var path: [String] = []
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             Group {
                 if let snapshot = store.snapshot {
                     List {
@@ -29,6 +30,9 @@ struct MessagesPage: View {
                 }
             }
             .navigationTitle("Messages")
+        }
+        .onReceive(WatchTourDirector.shared.$step) { step in
+            if let step { path = step.messagesPath }
         }
     }
 }
@@ -95,6 +99,9 @@ struct ConversationView: View {
         }
         .navigationTitle(peer)
         .sheet(isPresented: $replying) { ReplyView(peer: peer) }
+        .onReceive(WatchTourDirector.shared.$step) { step in
+            if let step { replying = step.reply }
+        }
     }
 }
 

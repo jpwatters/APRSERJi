@@ -4,9 +4,14 @@ import SwiftUI
 /**
  The map around me. Drag to move it, double-tap or turn the Digital Crown to zoom, or use the + and − buttons;
  the scope button centers on me again. Swipe along the right edge of the screen to change pages.
+ Each time the map comes into view, the app's version shows at the top for 5 seconds.
  */
 struct MapPage: View {
     @EnvironmentObject var store: WatchStore
+    /** True while the Map page is the one on screen. */
+    let visible: Bool
+    @State private var showVersion = false
+    @State private var versionShownAt = Date.distantPast
     @State private var position: MapCameraPosition = .automatic
     @State private var region: MKCoordinateRegion?
     @State private var centered = false
@@ -41,6 +46,31 @@ struct MapPage: View {
             } else {
                 Text("No position on the iPhone yet").foregroundStyle(.secondary)
             }
+        }
+        .overlay(alignment: .top) {
+            if showVersion {
+                Text(WatchAppInfo.versionLine)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .padding(.top, 2)
+                    .transition(.opacity)
+                    .allowsHitTesting(false)
+            }
+        }
+        .onAppear { if visible { flashVersion() } }
+        .onChange(of: visible) { _, now in if now { flashVersion() } }
+    }
+
+    /** Shows the version line for 5 seconds. */
+    private func flashVersion() {
+        let shownAt = Date()
+        versionShownAt = shownAt
+        withAnimation { showVersion = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+            guard versionShownAt == shownAt else { return }  // shown again since; that one hides it
+            withAnimation { showVersion = false }
         }
     }
 
@@ -93,4 +123,11 @@ enum MapZoom {
         let reach = (stations.prefix(5).map(\.distanceMeters).max() ?? 2_500) * 2.4
         return levels.firstIndex { $0 >= reach } ?? levels.count - 1
     }
+}
+
+/** The Watch app's name, version and build, e.g. "APRSERJi 0.5.10 (build 14)". */
+enum WatchAppInfo {
+    static let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+    static let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
+    static let versionLine = "APRSERJi " + version + (build.isEmpty ? "" : " (build \(build))")
 }

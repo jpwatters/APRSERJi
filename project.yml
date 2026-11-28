@@ -21,6 +21,8 @@ targets:
       properties:
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        # The name iPadOS shows above a window ("APRSERJi", not the target name "APRSERJi-iOS").
+        CFBundleName: APRSERJi
         NSLocationWhenInUseUsageDescription: &locationUsage APRSERJi uses your location to show and follow your GPS track while the app is open.
         NSAppTransportSecurity: &tileTransport
           NSExceptionDomains:

@@ -2,9 +2,10 @@ import SwiftUI
 
 struct StationsPage: View {
     @EnvironmentObject var store: WatchStore
+    @State private var path: [String] = []
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             Group {
                 if let snapshot = store.snapshot {
                     if snapshot.latitude == nil {
@@ -26,6 +27,9 @@ struct StationsPage: View {
                 }
             }
             .navigationTitle("Nearby")
+        }
+        .onReceive(WatchTourDirector.shared.$step) { step in
+            if let step { path = step.stationsPath }
         }
     }
 }

@@ -13,12 +13,18 @@ final class WatchStore: NSObject, ObservableObject {
 
     override init() {
         super.init()
+        if WatchTour.enabled {
+            // Screenshot tour: demo data, no iPhone needed.
+            snapshot = WatchTour.demo
+            phoneReachable = true
+            return
+        }
         session?.delegate = self
         session?.activate()
     }
 
     func send(_ command: WatchCommand, note: String? = nil) {
-        guard let session else { return }
+        guard !WatchTour.enabled, let session else { return }
         if session.activationState == .activated && session.isReachable {
             session.sendMessage(command.dictionary, replyHandler: nil) { [weak self] _ in
                 // Not delivered right away; queue it so the iPhone gets it later.
